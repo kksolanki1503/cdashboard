@@ -7,7 +7,9 @@ import {
   Settings2,
   SquareTerminal,
   HomeIcon,
+  Shield,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import { NavMain } from "@/components/dashboard/nav-main";
 
@@ -22,6 +24,17 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import LogOutButton from "./LogOutButton";
+import { useAppSelector } from "@/store/hooks";
+
+// Icon mapping for modules
+const moduleIconMap: Record<string, LucideIcon> = {
+  dashboard: HomeIcon,
+  playground: SquareTerminal,
+  models: Bot,
+  documentation: BookOpen,
+  settings: Settings2,
+  admin: Shield,
+};
 
 // This is sample data.
 const data = {
@@ -32,110 +45,69 @@ const data = {
       url: "#",
     },
   ],
-  navMain: [
-    {
-      title: "Dashboard",
-      url: "/",
-      icon: HomeIcon,
-      isActive: true,
-    },
-    {
-      title: "Playground",
-      url: "#",
-      icon: SquareTerminal,
-
-      items: [
-        {
-          title: "History",
-          url: "#",
-        },
-        {
-          title: "Starred",
-          url: "#",
-        },
-        {
-          title: "Settings",
-          url: "#",
-        },
-      ],
-    },
-
-    {
-      title: "Models",
-      url: "#",
-      icon: Bot,
-      items: [
-        {
-          title: "Genesis",
-          url: "#",
-        },
-        {
-          title: "Explorer",
-          url: "#",
-        },
-        {
-          title: "Quantum",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Documentation",
-      url: "#",
-      icon: BookOpen,
-      items: [
-        {
-          title: "Introduction",
-          url: "#",
-        },
-        {
-          title: "Get Started",
-          url: "#",
-        },
-        {
-          title: "Tutorials",
-          url: "#",
-        },
-        {
-          title: "Changelog",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Settings",
-      url: "#",
-      icon: Settings2,
-      items: [
-        {
-          title: "General",
-          url: "#",
-        },
-        {
-          title: "Team",
-          url: "#",
-        },
-        {
-          title: "Billing",
-          url: "#",
-        },
-        {
-          title: "Limits",
-          url: "#",
-        },
-      ],
-    },
-  ],
 };
 
+interface NavItem {
+  title: string;
+  url: string;
+  icon: LucideIcon;
+  isActive?: boolean;
+  items?: {
+    title: string;
+    url: string;
+  }[];
+}
+
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const modules = useAppSelector((state) => state.auth.modules);
+  const user = useAppSelector((state) => state.auth.user);
+
+  // Convert modules to navigation items
+  const navItems: NavItem[] = React.useMemo(() => {
+    const items: NavItem[] = modules
+      .filter((module) => module.can_read)
+      .map((module) => {
+        const moduleName = module.module_name.toLowerCase();
+        const icon = moduleIconMap[moduleName] || HomeIcon;
+
+        return {
+          title: module.module_name,
+          url: `/${moduleName}`,
+          icon,
+          isActive: moduleName === "dashboard",
+        };
+      });
+
+    // Add Admin panel for users with admin role or admin module access
+    const hasAdminAccess = modules.some(
+      (m) => m.module_name.toLowerCase() === "admin" && m.can_read,
+    );
+
+    // Check if user has admin role (you may need to adjust this based on your role structure)
+    const isAdmin = user && (user as { role?: string }).role === "admin";
+
+    if (hasAdminAccess || isAdmin) {
+      // Check if admin is not already in the list
+      if (!items.some((item) => item.title.toLowerCase() === "admin")) {
+        items.push({
+          title: "Admin",
+          url: "/admin",
+          icon: Shield,
+          isActive: false,
+        });
+      }
+    }
+
+    return items;
+  }, [modules, user]);
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <TeamSwitcher teams={data.teams} />
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
+        <NavMain items={navItems} />
       </SidebarContent>
       <SidebarFooter>
         <LogOutButton />

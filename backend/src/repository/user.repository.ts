@@ -4,8 +4,8 @@ import { User, CreateUserDTO } from "../types/index.js";
 export class UserRepository {
   async create(data: CreateUserDTO): Promise<User> {
     const [result] = await pool.execute(
-      `INSERT INTO users (name, email, password) VALUES (?, ?, ?)`,
-      [data.name, data.email, data.password],
+      `INSERT INTO users (name, email, password, role_id) VALUES (?, ?, ?, ?)`,
+      [data.name, data.email, data.password, data.role_id ?? null],
     );
 
     const insertId = (result as { insertId: number }).insertId;
@@ -40,6 +40,18 @@ export class UserRepository {
       active,
       id,
     ]);
+  }
+
+  async updateRole(id: number, roleId: number | null): Promise<void> {
+    await pool.execute(`UPDATE users SET role_id = ? WHERE id = ?`, [
+      roleId,
+      id,
+    ]);
+  }
+
+  async findAll(): Promise<User[]> {
+    const [rows] = await pool.execute(`SELECT * FROM users ORDER BY id ASC`);
+    return rows as User[];
   }
 }
 

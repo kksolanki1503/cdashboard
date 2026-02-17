@@ -20,17 +20,11 @@ export const signInSchema = z.object({
   }),
 });
 
-export const refreshTokenSchema = z.object({
-  body: z.object({
-    refreshToken: z.string().min(1, "Refresh token is required"),
-  }),
-});
+// Refresh token is sent via HTTP-only cookie, no body validation needed
+export const refreshTokenSchema = z.object({});
 
-export const logoutSchema = z.object({
-  body: z.object({
-    refreshToken: z.string().min(1, "Refresh token is required"),
-  }),
-});
+// Logout uses HTTP-only cookie for refresh token, no body validation needed
+export const logoutSchema = z.object({});
 
 export type SignUpInput = z.infer<typeof signUpSchema>["body"];
 export type SignInInput = z.infer<typeof signInSchema>["body"];

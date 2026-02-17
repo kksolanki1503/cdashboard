@@ -14,15 +14,24 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { NavUser } from "./nav-user";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function Dashboard() {
-  const data = {
-    user: {
-      name: "shadcn",
-      email: "m@example.com",
-      avatar: "/avatars/shadcn.jpg",
-    },
-  };
+  const { user, isAuthenticated } = useAuth();
+
+  // Prepare user data for NavUser component with fallbacks
+  const userData = user
+    ? {
+        name: user.name,
+        email: user.email,
+        avatar: "", // Avatar can be added later if needed
+      }
+    : {
+        name: "Guest",
+        email: "",
+        avatar: "",
+      };
+
   return (
     <SidebarProvider>
       <AppSidebar />
@@ -49,7 +58,7 @@ export default function Dashboard() {
             </Breadcrumb>
           </div>
           <div>
-            <NavUser user={data.user} />
+            <NavUser user={userData} />
           </div>
         </header>
 

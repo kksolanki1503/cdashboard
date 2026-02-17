@@ -1,4 +1,9 @@
-import { userRepository, refreshTokenRepository } from "../repository/index.js";
+import {
+  userRepository,
+  refreshTokenRepository,
+  roleRepository,
+  permissionRepository,
+} from "../repository/index.js";
 import {
   hashPassword,
   comparePassword,
@@ -11,6 +16,7 @@ import {
   type RefreshTokenResponse,
   type LogoutResponse,
   type CreateUserDTO,
+  type ModulePermissionDTO,
   toUserResponseDTO,
 } from "../types/index.js";
 import {
@@ -20,6 +26,30 @@ import {
 } from "../error/index.js";
 
 export class AuthService {
+  // Helper method to get user's accessible modules
+  private async getUserModules(
+    userId: number,
+    roleId: number | null,
+  ): Promise<ModulePermissionDTO[]> {
+    const permissions =
+      await permissionRepository.getUserPermissionsWithModuleNames(
+        userId,
+        roleId,
+      );
+
+    // Filter to only return modules where user has at least read access
+    return permissions
+      .filter((p) => p.can_read)
+      .map((p) => ({
+        module_id: p.module_id,
+        module_name: p.module_name,
+        can_read: p.can_read,
+        can_write: p.can_write,
+        can_delete: p.can_delete,
+        can_update: p.can_update,
+      }));
+  }
+
   async signUp(
     name: string,
     email: string,
@@ -31,14 +61,18 @@ export class AuthService {
       throw new ConflictError("Email already registered");
     }
 
+    // Get default "user" role
+    const defaultRole = await roleRepository.findByName("user");
+
     // Hash password
     const hashedPassword = await hashPassword(password);
 
-    // Create user
+    // Create user with default role
     const userData: CreateUserDTO = {
       name,
       email,
       password: hashedPassword,
+      ...(defaultRole?.id !== undefined && { role_id: defaultRole.id }),
     };
 
     const user = await userRepository.create(userData);
@@ -64,6 +98,9 @@ export class AuthService {
       expires_at: expiresAt,
     });
 
+    // Get user's accessible modules
+    const modules = await this.getUserModules(user.id, user.role_id ?? null);
+
     return {
       user: {
         id: user.id,
@@ -72,6 +109,7 @@ export class AuthService {
         approved: user.approved,
         active: user.active,
       },
+      modules,
       accessToken,
       refreshToken,
     };
@@ -81,6 +119,7 @@ export class AuthService {
     // Find user by email
     const user = await userRepository.findByEmail(email);
     if (!user) {
+      ("");
       throw new UnauthorizedError("Invalid credentials");
     }
 
@@ -121,6 +160,9 @@ export class AuthService {
       expires_at: expiresAt,
     });
 
+    // Get user's accessible modules
+    const modules = await this.getUserModules(user.id, user.role_id ?? null);
+
     return {
       user: {
         id: user.id,
@@ -129,6 +171,7 @@ export class AuthService {
         approved: user.approved,
         active: user.active,
       },
+      modules,
       accessToken,
       refreshToken,
     };
@@ -184,7 +227,18 @@ export class AuthService {
       expires_at: expiresAt,
     });
 
+    // Get user's accessible modules
+    const modules = await this.getUserModules(user.id, user.role_id ?? null);
+
     return {
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        approved: user.approved,
+        active: user.active,
+      },
+      modules,
       accessToken: newAccessToken,
       refreshToken: newRefreshToken,
     };
