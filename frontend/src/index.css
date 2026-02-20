@@ -117,10 +117,29 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
-    @apply bg-background text-foreground;
+  }
+
+  /* Remove hover delay from sidebar menu buttons */
+  [data-slot="sidebar-menu-button"] {
+    transition: all 0s !important;
+  }
+
+  [data-slot="sidebar-menu-button"]:hover {
+    transition:
+      background-color 0s,
+      color 0s !important;
+  }
+
+  [data-slot="sidebar-menu-sub-button"] {
+    transition: all 0s !important;
+  }
+
+  [data-slot="sidebar-menu-sub-button"]:hover {
+    transition:
+      background-color 0s,
+      color 0s !important;
   }
 }

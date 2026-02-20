@@ -14,7 +14,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 
 export function NavMain({
   items,
@@ -23,13 +23,22 @@ export function NavMain({
     title: string;
     url: string;
     icon?: LucideIcon;
-    isActive?: boolean;
     items?: {
       title: string;
       url: string;
     }[];
   }[];
 }) {
+  const location = useLocation();
+
+  // Check if a path is active (including child routes)
+  const isPathActive = (url: string): boolean => {
+    if (url === "/") {
+      return location.pathname === "/";
+    }
+    return location.pathname === url || location.pathname.startsWith(url + "/");
+  };
+
   return (
     <SidebarGroup>
       <SidebarMenu>
@@ -38,12 +47,15 @@ export function NavMain({
             <Collapsible
               key={item.title}
               asChild
-              defaultOpen={item.isActive}
+              defaultOpen={isPathActive(item.url)}
               className="group/collapsible"
             >
               <SidebarMenuItem>
                 <CollapsibleTrigger asChild>
-                  <SidebarMenuButton tooltip={item.title}>
+                  <SidebarMenuButton
+                    tooltip={item.title}
+                    className={`transition-all duration-200 ${isPathActive(item.url) ? "bg-accent" : ""}`}
+                  >
                     {item.icon && <item.icon />}
                     <span>{item.title}</span>
                     <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
@@ -53,7 +65,10 @@ export function NavMain({
                   <SidebarMenuSub>
                     {item.items.map((subItem) => (
                       <SidebarMenuSubItem key={subItem.title}>
-                        <SidebarMenuSubButton asChild>
+                        <SidebarMenuSubButton
+                          asChild
+                          className={`transition-all duration-200 ${isPathActive(subItem.url) ? "bg-accent" : ""}`}
+                        >
                           <Link to={subItem.url}>
                             <span>{subItem.title}</span>
                           </Link>
@@ -66,7 +81,11 @@ export function NavMain({
             </Collapsible>
           ) : (
             <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton tooltip={item.title} asChild>
+              <SidebarMenuButton
+                tooltip={item.title}
+                asChild
+                className={`transition-all duration-200 ${isPathActive(item.url) ? "bg-accent" : ""}`}
+              >
                 <Link to={item.url}>
                   {item.icon && <item.icon />}
                   <span>{item.title}</span>

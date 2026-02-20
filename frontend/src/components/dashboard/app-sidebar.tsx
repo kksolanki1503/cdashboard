@@ -51,7 +51,6 @@ interface NavItem {
   title: string;
   url: string;
   icon: LucideIcon;
-  isActive?: boolean;
   items?: {
     title: string;
     url: string;
@@ -71,6 +70,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     const items: NavItem[] = rootModules.map((module) => {
       const moduleName = module.module_name.toLowerCase();
       const icon = moduleIconMap[moduleName] || HomeIcon;
+      const url = moduleName === "dashboard" ? "/" : `/${moduleName}`;
 
       // Find child modules
       const children = childModules
@@ -78,19 +78,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         .map((child) => {
           const childName = child.module_name.toLowerCase();
           const childIcon = moduleIconMap[childName] || HomeIcon;
+          const childUrl = `/${childName}`;
           return {
             title: child.module_name,
-            url: `/${childName}`,
+            url: childUrl,
             icon: childIcon,
-            isActive: false,
           };
         });
 
       return {
         title: module.module_name,
-        url: moduleName === "dashboard" ? "/" : `/${moduleName}`,
+        url,
         icon,
-        isActive: moduleName === "dashboard",
         ...(children.length > 0 && { items: children }),
       };
     });
@@ -100,7 +99,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       (m) => m.module_name.toLowerCase() === "admin",
     );
 
-    // Check if user has admin role (you may need to adjust this based on your role structure)
+    // Check if user has admin role
     const isAdmin = user && (user as { role?: string }).role === "admin";
 
     if (hasAdminAccess || isAdmin) {
@@ -110,7 +109,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           title: "Admin",
           url: "/admin",
           icon: Shield,
-          isActive: false,
         });
       }
     }
