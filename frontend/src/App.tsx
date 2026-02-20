@@ -1,15 +1,15 @@
-import Dashboard from "./components/dashboard/dashboard";
+import Dashboard from "./components/dashboard/Dashboard";
 import SignInPage from "./components/auth/SignInPage";
 import SignUpPage from "./components/auth/SignUpPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import ErrorBoundary from "./components/common/ErrorBoundary";
 import AdminPanel from "./components/admin/AdminPanel";
+import { ModuleProvider } from "./contexts/ModuleContext";
 import { store } from "./store";
 import { Provider } from "react-redux";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
-import { createBrowserRouter } from "react-router";
-import { RouterProvider } from "react-router/dom";
+import { createBrowserRouter, RouterProvider } from "react-router";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -26,27 +26,33 @@ const router = createBrowserRouter([
     path: "/",
     element: (
       <ErrorBoundary>
-        <ProtectedRoute>
-          <Dashboard />
-        </ProtectedRoute>
+        <ModuleProvider>
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        </ModuleProvider>
       </ErrorBoundary>
     ),
-  },
-  {
-    path: "/admin",
-    element: (
-      <ErrorBoundary>
-        <ProtectedRoute>
-          <AdminPanel />
-        </ProtectedRoute>
-      </ErrorBoundary>
-    ),
+    children: [
+      {
+        path: "admin",
+        element: (
+          <ErrorBoundary>
+            <ModuleProvider>
+              <AdminPanel />
+            </ModuleProvider>
+          </ErrorBoundary>
+        ),
+      },
+    ],
   },
   {
     path: "/signin",
     element: (
       <ErrorBoundary>
-        <SignInPage />
+        <ModuleProvider>
+          <SignInPage />
+        </ModuleProvider>
       </ErrorBoundary>
     ),
   },
@@ -54,7 +60,9 @@ const router = createBrowserRouter([
     path: "/signup",
     element: (
       <ErrorBoundary>
-        <SignUpPage />
+        <ModuleProvider>
+          <SignUpPage />
+        </ModuleProvider>
       </ErrorBoundary>
     ),
   },

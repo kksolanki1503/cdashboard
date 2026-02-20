@@ -29,13 +29,142 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, Edit, Trash2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  MoreHorizontal,
+  Plus,
+  Edit,
+  Trash2,
+  ChevronRight,
+  ChevronDown,
+  Folder,
+  FolderOpen,
+} from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import adminService, {
   type Module,
+  type ModuleWithChildren,
   type CreateModuleDTO,
   type UpdateModuleDTO,
 } from "@/services/admin.service";
+
+// Recursive component to render module tree
+const ModuleTreeItem: React.FC<{
+  module: ModuleWithChildren;
+  level: number;
+  onEdit: (module: Module) => void;
+  onDelete: (module: Module) => void;
+  onAddSubModule: (parentId: number, parentName: string) => void;
+}> = ({ module, level, onEdit, onDelete, onAddSubModule }) => {
+  const [isExpanded, setIsExpanded] = useState(level < 1);
+  const hasChildren = module.children && module.children.length > 0;
+
+  return (
+    <>
+      <TableRow key={module.id}>
+        <TableCell>
+          <div
+            className="flex items-center"
+            style={{ paddingLeft: `${level * 20}px` }}
+          >
+            {hasChildren ? (
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="mr-1 p-0.5 hover:bg-muted rounded"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+              </button>
+            ) : (
+              <span className="w-5 inline-block" />
+            )}
+            {hasChildren ? (
+              isExpanded ? (
+                <FolderOpen className="h-4 w-4 mr-2 text-blue-500" />
+              ) : (
+                <Folder className="h-4 w-4 mr-2 text-blue-500" />
+              )
+            ) : (
+              <span className="w-4 mr-2" />
+            )}
+            <span className="font-medium">{module.name}</span>
+          </div>
+        </TableCell>
+        <TableCell>{module.description || "-"}</TableCell>
+        <TableCell>
+          {module.parent_id ? (
+            <span className="text-muted-foreground text-sm">Sub-module</span>
+          ) : (
+            <span className="text-sm">Parent module</span>
+          )}
+        </TableCell>
+        <TableCell>
+          {module.active ? (
+            <span className="text-green-600 text-sm">Active</span>
+          ) : (
+            <span className="text-red-600 text-sm">Inactive</span>
+          )}
+        </TableCell>
+        <TableCell>
+          {new Date(module.created_at).toLocaleDateString()}
+        </TableCell>
+        <TableCell className="text-right">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => onEdit(module)}>
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onAddSubModule(module.id, module.name)}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add Sub-module
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => onDelete(module)}
+                className="text-red-600"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </TableCell>
+      </TableRow>
+      {hasChildren && isExpanded && (
+        <>
+          {module.children.map((child) => (
+            <ModuleTreeItem
+              key={child.id}
+              module={child}
+              level={level + 1}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onAddSubModule={onAddSubModule}
+            />
+          ))}
+        </>
+      )}
+    </>
+  );
+};
 
 const ModuleManagement: React.FC = () => {
   const queryClient = useQueryClient();
@@ -43,13 +172,24 @@ const ModuleManagement: React.FC = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedModule, setSelectedModule] = useState<Module | null>(null);
+  const [parentModule, setParentModule] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
   const [formData, setFormData] = useState<CreateModuleDTO>({
     name: "",
     description: "",
+    parent_id: null,
   });
 
-  // Fetch modules
-  const { data: modulesData, isLoading: modulesLoading } = useQuery({
+  // Fetch modules as tree structure
+  const { data: modulesTreeData, isLoading: modulesLoading } = useQuery({
+    queryKey: ["adminModulesTree"],
+    queryFn: adminService.getModuleTree,
+  });
+
+  // Fetch all modules for parent selection dropdown
+  const { data: allModulesData } = useQuery({
     queryKey: ["adminModules"],
     queryFn: adminService.getAllModules,
   });
@@ -59,6 +199,7 @@ const ModuleManagement: React.FC = () => {
     mutationFn: adminService.createModule,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["adminModules"] });
+      queryClient.invalidateQueries({ queryKey: ["adminModulesTree"] });
       queryClient.invalidateQueries({ queryKey: ["adminDashboardStats"] });
       toast.success("Module created successfully");
       setIsCreateDialogOpen(false);
@@ -75,6 +216,7 @@ const ModuleManagement: React.FC = () => {
       adminService.updateModule(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["adminModules"] });
+      queryClient.invalidateQueries({ queryKey: ["adminModulesTree"] });
       toast.success("Module updated successfully");
       setIsEditDialogOpen(false);
       resetForm();
@@ -89,6 +231,7 @@ const ModuleManagement: React.FC = () => {
     mutationFn: adminService.deleteModule,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["adminModules"] });
+      queryClient.invalidateQueries({ queryKey: ["adminModulesTree"] });
       queryClient.invalidateQueries({ queryKey: ["adminDashboardStats"] });
       toast.success("Module deleted successfully");
       setIsDeleteDialogOpen(false);
@@ -103,8 +246,10 @@ const ModuleManagement: React.FC = () => {
     setFormData({
       name: "",
       description: "",
+      parent_id: null,
     });
     setSelectedModule(null);
+    setParentModule(null);
   };
 
   const handleCreateModule = () => {
@@ -120,6 +265,7 @@ const ModuleManagement: React.FC = () => {
     const updateData: UpdateModuleDTO = {
       name: formData.name,
       description: formData.description,
+      parent_id: formData.parent_id,
     };
     updateModuleMutation.mutate({ id: selectedModule.id, data: updateData });
   };
@@ -134,7 +280,9 @@ const ModuleManagement: React.FC = () => {
     setFormData({
       name: module.name,
       description: module.description || "",
+      parent_id: module.parent_id,
     });
+    setParentModule(null);
     setIsEditDialogOpen(true);
   };
 
@@ -143,7 +291,23 @@ const ModuleManagement: React.FC = () => {
     setIsDeleteDialogOpen(true);
   };
 
-  const modules = modulesData?.success ? modulesData.data : [];
+  const openAddSubModuleDialog = (parentId: number, parentName: string) => {
+    setParentModule({ id: parentId, name: parentName });
+    setFormData({
+      name: "",
+      description: "",
+      parent_id: parentId,
+    });
+    setIsCreateDialogOpen(true);
+  };
+
+  const modulesTree = modulesTreeData?.success ? modulesTreeData.data : [];
+  const allModules = allModulesData?.success ? allModulesData.data : [];
+
+  // Filter out the current module and its descendants for parent selection in edit mode
+  const availableParentModules = selectedModule
+    ? allModules.filter((m) => m.id !== selectedModule.id)
+    : allModules;
 
   if (modulesLoading) {
     return (
@@ -168,7 +332,13 @@ const ModuleManagement: React.FC = () => {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Module Management</CardTitle>
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
+            <Button
+              onClick={() => {
+                setParentModule(null);
+                resetForm();
+                setIsCreateDialogOpen(true);
+              }}
+            >
               <Plus className="mr-2 h-4 w-4" />
               Add Module
             </Button>
@@ -179,58 +349,31 @@ const ModuleManagement: React.FC = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>ID</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Description</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {modules.length === 0 ? (
+                {modulesTree.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center">
+                    <TableCell colSpan={6} className="text-center">
                       No modules found
                     </TableCell>
                   </TableRow>
                 ) : (
-                  modules.map((module) => (
-                    <TableRow key={module.id}>
-                      <TableCell>{module.id}</TableCell>
-                      <TableCell className="font-medium">
-                        {module.name}
-                      </TableCell>
-                      <TableCell>{module.description || "-"}</TableCell>
-                      <TableCell>
-                        {new Date(module.created_at).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                            <DropdownMenuItem
-                              onClick={() => openEditDialog(module)}
-                            >
-                              <Edit className="mr-2 h-4 w-4" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => openDeleteDialog(module)}
-                              className="text-red-600"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
+                  modulesTree.map((module) => (
+                    <ModuleTreeItem
+                      key={module.id}
+                      module={module}
+                      level={0}
+                      onEdit={openEditDialog}
+                      onDelete={openDeleteDialog}
+                      onAddSubModule={openAddSubModuleDialog}
+                    />
                   ))
                 )}
               </TableBody>
@@ -243,9 +386,15 @@ const ModuleManagement: React.FC = () => {
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Module</DialogTitle>
+            <DialogTitle>
+              {parentModule
+                ? `Add Sub-module to "${parentModule.name}"`
+                : "Create New Module"}
+            </DialogTitle>
             <DialogDescription>
-              Add a new module to the system.
+              {parentModule
+                ? "Add a new sub-module under this parent module."
+                : "Add a new module to the system."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -271,6 +420,32 @@ const ModuleManagement: React.FC = () => {
                 placeholder="Enter module description"
               />
             </div>
+            {!parentModule && (
+              <div className="space-y-2">
+                <Label htmlFor="parent">Parent Module (Optional)</Label>
+                <Select
+                  value={formData.parent_id?.toString() || "none"}
+                  onValueChange={(value) =>
+                    setFormData({
+                      ...formData,
+                      parent_id: value === "none" ? null : parseInt(value, 10),
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select parent module" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No parent (Top-level)</SelectItem>
+                    {allModules.map((module) => (
+                      <SelectItem key={module.id} value={module.id.toString()}>
+                        {module.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -319,6 +494,30 @@ const ModuleManagement: React.FC = () => {
                   setFormData({ ...formData, description: e.target.value })
                 }
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-parent">Parent Module</Label>
+              <Select
+                value={formData.parent_id?.toString() || "none"}
+                onValueChange={(value) =>
+                  setFormData({
+                    ...formData,
+                    parent_id: value === "none" ? null : parseInt(value, 10),
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select parent module" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No parent (Top-level)</SelectItem>
+                  {availableParentModules.map((module) => (
+                    <SelectItem key={module.id} value={module.id.toString()}>
+                      {module.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>

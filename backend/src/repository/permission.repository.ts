@@ -1,414 +1,169 @@
 import { pool } from "../config/index.js";
 import {
-  RolePermission,
-  UserPermission,
+  RoleModule,
+  UserModule,
+  CreateRoleModuleDTO,
+  CreateUserModuleDTO,
+  ModuleAccessDTO,
+  // Legacy types for backwards compatibility
   PermissionMaster,
-  CreateRolePermissionDTO,
-  CreateUserPermissionDTO,
-  UpdateRolePermissionDTO,
-  UpdateUserPermissionDTO,
   CreatePermissionMasterDTO,
   PermissionResponseDTO,
 } from "../types/index.js";
 
 export class PermissionRepository {
-  // Permission Master
-  async createPermissionMaster(
-    data: CreatePermissionMasterDTO,
-  ): Promise<PermissionMaster> {
-    const [result] = await pool.execute(
-      `INSERT INTO permissions (name, code, description, active)
-       VALUES (?, ?, ?, ?)`,
-      [data.name, data.code, data.description ?? null, data.active ?? true],
-    );
+  // ==================== ROLE MODULES (Simplified) ====================
 
-    const insertResult = result as { insertId: number };
-    const [rows] = await pool.execute(
-      `SELECT * FROM permissions WHERE id = ?`,
-      [insertResult.insertId],
-    );
-
-    const permissions = rows as PermissionMaster[];
-    return permissions[0] as PermissionMaster;
-  }
-
-  async findAllPermissionMasters(
-    activeOnly = false,
-  ): Promise<PermissionMaster[]> {
-    const query = activeOnly
-      ? `SELECT * FROM permissions WHERE active = TRUE ORDER BY name`
-      : `SELECT * FROM permissions ORDER BY name`;
-
-    const [rows] = await pool.execute(query);
-    return rows as PermissionMaster[];
-  }
-
-  async findPermissionMasterById(id: number): Promise<PermissionMaster | null> {
-    const [rows] = await pool.execute(
-      `SELECT * FROM permissions WHERE id = ?`,
-      [id],
-    );
-
-    const permissions = rows as PermissionMaster[];
-    return permissions.length > 0 ? (permissions[0] ?? null) : null;
-  }
-
-  async findPermissionMasterByCode(
-    code: string,
-  ): Promise<PermissionMaster | null> {
-    const [rows] = await pool.execute(
-      `SELECT * FROM permissions WHERE code = ?`,
-      [code],
-    );
-
-    const permissions = rows as PermissionMaster[];
-    return permissions.length > 0 ? (permissions[0] ?? null) : null;
-  }
-
-  async updatePermissionMaster(
-    id: number,
-    data: Partial<CreatePermissionMasterDTO>,
-  ): Promise<PermissionMaster | null> {
-    const fields: string[] = [];
-    const values: (string | boolean | null)[] = [];
-
-    if (data.name !== undefined) {
-      fields.push("name = ?");
-      values.push(data.name);
-    }
-    if (data.code !== undefined) {
-      fields.push("code = ?");
-      values.push(data.code);
-    }
-    if (data.description !== undefined) {
-      fields.push("description = ?");
-      values.push(data.description);
-    }
-    if (data.active !== undefined) {
-      fields.push("active = ?");
-      values.push(data.active);
-    }
-
-    if (fields.length === 0) {
-      return this.findPermissionMasterById(id);
-    }
-
-    values.push(id.toString());
+  // Add module access to a role
+  async addRoleModule(data: CreateRoleModuleDTO): Promise<RoleModule> {
     await pool.execute(
-      `UPDATE permissions SET ${fields.join(", ")} WHERE id = ?`,
-      values,
-    );
-
-    return this.findPermissionMasterById(id);
-  }
-
-  async deletePermissionMaster(id: number): Promise<void> {
-    await pool.execute(`DELETE FROM permissions WHERE id = ?`, [id]);
-  }
-
-  // Role Permissions
-  async createRolePermission(
-    data: CreateRolePermissionDTO,
-  ): Promise<RolePermission> {
-    await pool.execute(
-      `INSERT INTO role_permissions (role_id, module_id, can_read, can_write, can_delete, can_update, active)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE 
-         can_read = VALUES(can_read),
-         can_write = VALUES(can_write),
-         can_delete = VALUES(can_delete),
-         can_update = VALUES(can_update),
-         active = VALUES(active)`,
-      [
-        data.role_id,
-        data.module_id,
-        data.can_read ?? false,
-        data.can_write ?? false,
-        data.can_delete ?? false,
-        data.can_update ?? false,
-        data.active ?? true,
-      ],
-    );
-
-    const [rows] = await pool.execute(
-      `SELECT * FROM role_permissions WHERE role_id = ? AND module_id = ?`,
+      `INSERT INTO role_modules (role_id, module_id) VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE role_id = role_id`,
       [data.role_id, data.module_id],
     );
 
-    const permissions = rows as RolePermission[];
-    return permissions[0] as RolePermission;
-  }
-
-  async findRolePermissionsByRoleId(
-    roleId: number,
-    activeOnly = false,
-  ): Promise<RolePermission[]> {
-    const query = activeOnly
-      ? `SELECT * FROM role_permissions WHERE role_id = ? AND active = TRUE`
-      : `SELECT * FROM role_permissions WHERE role_id = ?`;
-
-    const [rows] = await pool.execute(query, [roleId]);
-    return rows as RolePermission[];
-  }
-
-  async findRolePermission(
-    roleId: number,
-    moduleId: number,
-  ): Promise<RolePermission | null> {
     const [rows] = await pool.execute(
-      `SELECT * FROM role_permissions WHERE role_id = ? AND module_id = ?`,
+      `SELECT * FROM role_modules WHERE role_id = ? AND module_id = ?`,
+      [data.role_id, data.module_id],
+    );
+
+    const modules = rows as RoleModule[];
+    return modules[0] as RoleModule;
+  }
+
+  // Get all modules a role has access to
+  async getRoleModules(roleId: number): Promise<RoleModule[]> {
+    const [rows] = await pool.execute(
+      `SELECT * FROM role_modules WHERE role_id = ?`,
+      [roleId],
+    );
+    return rows as RoleModule[];
+  }
+
+  // Check if a role has access to a module
+  async hasRoleModule(roleId: number, moduleId: number): Promise<boolean> {
+    const [rows] = await pool.execute(
+      `SELECT COUNT(*) as count FROM role_modules WHERE role_id = ? AND module_id = ?`,
       [roleId, moduleId],
     );
-
-    const permissions = rows as RolePermission[];
-    return permissions.length > 0 ? (permissions[0] ?? null) : null;
+    const result = rows as { count: number }[];
+    return (result[0]?.count ?? 0) > 0;
   }
 
-  async updateRolePermission(
-    roleId: number,
-    moduleId: number,
-    data: UpdateRolePermissionDTO,
-  ): Promise<RolePermission | null> {
-    const fields: string[] = [];
-    const values: (boolean | number)[] = [];
-
-    if (data.can_read !== undefined) {
-      fields.push("can_read = ?");
-      values.push(data.can_read);
-    }
-    if (data.can_write !== undefined) {
-      fields.push("can_write = ?");
-      values.push(data.can_write);
-    }
-    if (data.can_delete !== undefined) {
-      fields.push("can_delete = ?");
-      values.push(data.can_delete);
-    }
-    if (data.can_update !== undefined) {
-      fields.push("can_update = ?");
-      values.push(data.can_update);
-    }
-    if (data.active !== undefined) {
-      fields.push("active = ?");
-      values.push(data.active);
-    }
-
-    if (fields.length === 0) {
-      return this.findRolePermission(roleId, moduleId);
-    }
-
-    values.push(roleId, moduleId);
+  // Remove module access from a role
+  async removeRoleModule(roleId: number, moduleId: number): Promise<void> {
     await pool.execute(
-      `UPDATE role_permissions SET ${fields.join(", ")} WHERE role_id = ? AND module_id = ?`,
-      values,
-    );
-
-    return this.findRolePermission(roleId, moduleId);
-  }
-
-  async deleteRolePermission(roleId: number, moduleId: number): Promise<void> {
-    await pool.execute(
-      `DELETE FROM role_permissions WHERE role_id = ? AND module_id = ?`,
+      `DELETE FROM role_modules WHERE role_id = ? AND module_id = ?`,
       [roleId, moduleId],
     );
   }
 
-  async deleteAllRolePermissions(roleId: number): Promise<void> {
-    await pool.execute(`DELETE FROM role_permissions WHERE role_id = ?`, [
-      roleId,
-    ]);
+  // Remove all module access from a role
+  async removeAllRoleModules(roleId: number): Promise<void> {
+    await pool.execute(`DELETE FROM role_modules WHERE role_id = ?`, [roleId]);
   }
 
-  // User Permissions
-  async createUserPermission(
-    data: CreateUserPermissionDTO,
-  ): Promise<UserPermission> {
-    await pool.execute(
-      `INSERT INTO user_permissions (user_id, module_id, can_read, can_write, can_delete, can_update, active)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE 
-         can_read = VALUES(can_read),
-         can_write = VALUES(can_write),
-         can_delete = VALUES(can_delete),
-         can_update = VALUES(can_update),
-         active = VALUES(active)`,
-      [
-        data.user_id,
-        data.module_id,
-        data.can_read ?? false,
-        data.can_write ?? false,
-        data.can_delete ?? false,
-        data.can_update ?? false,
-        data.active ?? true,
-      ],
-    );
+  // ==================== USER MODULES (Simplified) ====================
 
-    const [rows] = await pool.execute(
-      `SELECT * FROM user_permissions WHERE user_id = ? AND module_id = ?`,
+  // Add extra module access to a user
+  async addUserModule(data: CreateUserModuleDTO): Promise<UserModule> {
+    await pool.execute(
+      `INSERT INTO user_modules (user_id, module_id) VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE user_id = user_id`,
       [data.user_id, data.module_id],
     );
 
-    const permissions = rows as UserPermission[];
-    return permissions[0] as UserPermission;
-  }
-
-  async findUserPermissionsByUserId(
-    userId: number,
-    activeOnly = false,
-  ): Promise<UserPermission[]> {
-    const query = activeOnly
-      ? `SELECT * FROM user_permissions WHERE user_id = ? AND active = TRUE`
-      : `SELECT * FROM user_permissions WHERE user_id = ?`;
-
-    const [rows] = await pool.execute(query, [userId]);
-    return rows as UserPermission[];
-  }
-
-  async findUserPermission(
-    userId: number,
-    moduleId: number,
-  ): Promise<UserPermission | null> {
     const [rows] = await pool.execute(
-      `SELECT * FROM user_permissions WHERE user_id = ? AND module_id = ?`,
+      `SELECT * FROM user_modules WHERE user_id = ? AND module_id = ?`,
+      [data.user_id, data.module_id],
+    );
+
+    const modules = rows as UserModule[];
+    return modules[0] as UserModule;
+  }
+
+  // Get all extra modules a user has access to
+  async getUserModules(userId: number): Promise<UserModule[]> {
+    const [rows] = await pool.execute(
+      `SELECT * FROM user_modules WHERE user_id = ?`,
+      [userId],
+    );
+    return rows as UserModule[];
+  }
+
+  // Check if a user has extra access to a module
+  async hasUserModule(userId: number, moduleId: number): Promise<boolean> {
+    const [rows] = await pool.execute(
+      `SELECT COUNT(*) as count FROM user_modules WHERE user_id = ? AND module_id = ?`,
       [userId, moduleId],
     );
-
-    const permissions = rows as UserPermission[];
-    return permissions.length > 0 ? (permissions[0] ?? null) : null;
+    const result = rows as { count: number }[];
+    return (result[0]?.count ?? 0) > 0;
   }
 
-  async updateUserPermission(
-    userId: number,
-    moduleId: number,
-    data: UpdateUserPermissionDTO,
-  ): Promise<UserPermission | null> {
-    const fields: string[] = [];
-    const values: (boolean | number)[] = [];
-
-    if (data.can_read !== undefined) {
-      fields.push("can_read = ?");
-      values.push(data.can_read);
-    }
-    if (data.can_write !== undefined) {
-      fields.push("can_write = ?");
-      values.push(data.can_write);
-    }
-    if (data.can_delete !== undefined) {
-      fields.push("can_delete = ?");
-      values.push(data.can_delete);
-    }
-    if (data.can_update !== undefined) {
-      fields.push("can_update = ?");
-      values.push(data.can_update);
-    }
-    if (data.active !== undefined) {
-      fields.push("active = ?");
-      values.push(data.active);
-    }
-
-    if (fields.length === 0) {
-      return this.findUserPermission(userId, moduleId);
-    }
-
-    values.push(userId, moduleId);
+  // Remove extra module access from a user
+  async removeUserModule(userId: number, moduleId: number): Promise<void> {
     await pool.execute(
-      `UPDATE user_permissions SET ${fields.join(", ")} WHERE user_id = ? AND module_id = ?`,
-      values,
-    );
-
-    return this.findUserPermission(userId, moduleId);
-  }
-
-  async deleteUserPermission(userId: number, moduleId: number): Promise<void> {
-    await pool.execute(
-      `DELETE FROM user_permissions WHERE user_id = ? AND module_id = ?`,
+      `DELETE FROM user_modules WHERE user_id = ? AND module_id = ?`,
       [userId, moduleId],
     );
   }
 
-  async deleteAllUserPermissions(userId: number): Promise<void> {
-    await pool.execute(`DELETE FROM user_permissions WHERE user_id = ?`, [
-      userId,
-    ]);
+  // Remove all extra module access from a user
+  async removeAllUserModules(userId: number): Promise<void> {
+    await pool.execute(`DELETE FROM user_modules WHERE user_id = ?`, [userId]);
   }
 
-  // Combined permissions for a user (role + user permissions)
-  async getUserPermissionsWithModuleNames(
+  // ==================== COMBINED PERMISSIONS (For Auth) ====================
+
+  // Get all modules a user has access to (role + user modules)
+  async getUserModulesWithModuleNames(
     userId: number,
     roleId: number | null,
-  ): Promise<PermissionResponseDTO[]> {
+  ): Promise<ModuleAccessDTO[]> {
     // Get all active modules
     const [modules] = await pool.execute(
-      `SELECT id, name FROM modules WHERE active = TRUE`,
+      `SELECT id, name, parent_id FROM modules WHERE active = TRUE`,
     );
 
-    // Get role permissions if role exists (active only)
-    let rolePermissions: RolePermission[] = [];
+    // Get role modules if role exists
+    let roleModules: RoleModule[] = [];
     if (roleId) {
-      rolePermissions = await this.findRolePermissionsByRoleId(roleId, true);
+      roleModules = await this.getRoleModules(roleId);
     }
 
-    // Get user permissions (active only)
-    const userPermissions = await this.findUserPermissionsByUserId(
-      userId,
-      true,
-    );
+    // Get user extra modules
+    const userModules = await this.getUserModules(userId);
 
-    // Create a map for quick lookup
-    const rolePermMap = new Map<number, RolePermission>();
-    for (const rp of rolePermissions) {
-      rolePermMap.set(rp.module_id, rp);
-    }
-
-    const userPermMap = new Map<number, UserPermission>();
-    for (const up of userPermissions) {
-      userPermMap.set(up.module_id, up);
-    }
+    // Create sets for quick lookup
+    const roleModuleIds = new Set(roleModules.map((rm) => rm.module_id));
+    const userModuleIds = new Set(userModules.map((um) => um.module_id));
 
     // Combine permissions
-    const result: PermissionResponseDTO[] = [];
-    for (const module of modules as { id: number; name: string }[]) {
-      const rolePerm = rolePermMap.get(module.id);
-      const userPerm = userPermMap.get(module.id);
+    const result: ModuleAccessDTO[] = [];
+    for (const module of modules as {
+      id: number;
+      name: string;
+      parent_id: number | null;
+    }[]) {
+      const hasRoleAccess = roleModuleIds.has(module.id);
+      const hasUserAccess = userModuleIds.has(module.id);
 
-      let canRead = false;
-      let canWrite = false;
-      let canDelete = false;
-      let canUpdate = false;
-      let active = false;
       let source: "role" | "user" | "combined" = "role";
+      let hasAccess = hasRoleAccess;
 
-      if (rolePerm && userPerm) {
-        canRead = rolePerm.can_read || userPerm.can_read;
-        canWrite = rolePerm.can_write || userPerm.can_write;
-        canDelete = rolePerm.can_delete || userPerm.can_delete;
-        canUpdate = rolePerm.can_update || userPerm.can_update;
-        active = rolePerm.active || userPerm.active;
+      if (hasRoleAccess && hasUserAccess) {
         source = "combined";
-      } else if (userPerm) {
-        canRead = userPerm.can_read;
-        canWrite = userPerm.can_write;
-        canDelete = userPerm.can_delete;
-        canUpdate = userPerm.can_update;
-        active = userPerm.active;
+      } else if (hasUserAccess) {
         source = "user";
-      } else if (rolePerm) {
-        canRead = rolePerm.can_read;
-        canWrite = rolePerm.can_write;
-        canDelete = rolePerm.can_delete;
-        canUpdate = rolePerm.can_update;
-        active = rolePerm.active;
-        source = "role";
+        hasAccess = true;
       }
 
       result.push({
         module_id: module.id,
         module_name: module.name,
-        can_read: canRead,
-        can_write: canWrite,
-        can_delete: canDelete,
-        can_update: canUpdate,
-        active: active,
+        parent_id: module.parent_id,
+        has_access: hasAccess,
         source,
       });
     }
@@ -416,25 +171,184 @@ export class PermissionRepository {
     return result;
   }
 
-  // Check if user has specific permission for a module
+  // Check if user has access to a specific module
+  async hasModuleAccess(
+    userId: number,
+    roleId: number | null,
+    moduleName: string,
+  ): Promise<boolean> {
+    // Get module id
+    const [modules] = await pool.execute(
+      `SELECT id FROM modules WHERE name = ? AND active = TRUE`,
+      [moduleName],
+    );
+    const moduleRows = modules as { id: number }[];
+    if (moduleRows.length === 0) {
+      return false;
+    }
+    const moduleId = moduleRows[0]?.id;
+    if (!moduleId) {
+      return false;
+    }
+
+    // Check role access
+    let hasRoleAccess = false;
+    if (roleId) {
+      hasRoleAccess = await this.hasRoleModule(roleId, moduleId);
+    }
+
+    // Check user extra access
+    const hasUserAccess = await this.hasUserModule(userId, moduleId);
+
+    return hasRoleAccess || hasUserAccess;
+  }
+
+  // ==================== LEGACY METHODS (For backwards compatibility) ====================
+  // These methods are kept for backwards compatibility but use the simplified schema
+
+  async createPermissionMaster(
+    data: CreatePermissionMasterDTO,
+  ): Promise<PermissionMaster> {
+    // No-op - permissions table no longer exists
+    throw new Error("Permission master is no longer used");
+  }
+
+  async findAllPermissionMasters(
+    _activeOnly = false,
+  ): Promise<PermissionMaster[]> {
+    // No-op - permissions table no longer exists
+    return [];
+  }
+
+  async findPermissionMasterById(
+    _id: number,
+  ): Promise<PermissionMaster | null> {
+    return null;
+  }
+
+  async findPermissionMasterByCode(
+    _code: string,
+  ): Promise<PermissionMaster | null> {
+    return null;
+  }
+
+  async updatePermissionMaster(
+    _id: number,
+    _data: Partial<CreatePermissionMasterDTO>,
+  ): Promise<PermissionMaster | null> {
+    return null;
+  }
+
+  async deletePermissionMaster(_id: number): Promise<void> {
+    // No-op
+  }
+
+  // Legacy role permissions methods
+  async createRolePermission(data: CreateRoleModuleDTO): Promise<any> {
+    return this.addRoleModule(data);
+  }
+
+  async findRolePermissionsByRoleId(
+    roleId: number,
+    _activeOnly = false,
+  ): Promise<any[]> {
+    return this.getRoleModules(roleId);
+  }
+
+  async findRolePermission(
+    roleId: number,
+    moduleId: number,
+  ): Promise<any | null> {
+    const hasAccess = await this.hasRoleModule(roleId, moduleId);
+    if (!hasAccess) return null;
+    return { role_id: roleId, module_id: moduleId };
+  }
+
+  async updateRolePermission(
+    _roleId: number,
+    _moduleId: number,
+    _data: any,
+  ): Promise<any | null> {
+    return null;
+  }
+
+  async deleteRolePermission(roleId: number, moduleId: number): Promise<void> {
+    await this.removeRoleModule(roleId, moduleId);
+  }
+
+  async deleteAllRolePermissions(roleId: number): Promise<void> {
+    await this.removeAllRoleModules(roleId);
+  }
+
+  // Legacy user permissions methods
+  async createUserPermission(data: CreateUserModuleDTO): Promise<any> {
+    return this.addUserModule(data);
+  }
+
+  async findUserPermissionsByUserId(
+    userId: number,
+    _activeOnly = false,
+  ): Promise<any[]> {
+    return this.getUserModules(userId);
+  }
+
+  async findUserPermission(
+    userId: number,
+    moduleId: number,
+  ): Promise<any | null> {
+    const hasAccess = await this.hasUserModule(userId, moduleId);
+    if (!hasAccess) return null;
+    return { user_id: userId, module_id: moduleId };
+  }
+
+  async updateUserPermission(
+    _userId: number,
+    _moduleId: number,
+    _data: any,
+  ): Promise<any | null> {
+    return null;
+  }
+
+  async deleteUserPermission(userId: number, moduleId: number): Promise<void> {
+    await this.removeUserModule(userId, moduleId);
+  }
+
+  async deleteAllUserPermissions(userId: number): Promise<void> {
+    await this.removeAllUserModules(userId);
+  }
+
+  async getUserPermissionsWithModuleNames(
+    userId: number,
+    roleId: number | null,
+  ): Promise<PermissionResponseDTO[]> {
+    const modules = await this.getUserModulesWithModuleNames(userId, roleId);
+
+    return modules.map((m) => ({
+      module_id: m.module_id,
+      module_name: m.module_name,
+      can_read: m.has_access,
+      can_write: m.has_access,
+      can_delete: m.has_access,
+      can_update: m.has_access,
+      active: m.has_access,
+      source: m.source,
+    }));
+  }
+
   async hasPermission(
     userId: number,
     moduleName: string,
-    permissionType: "read" | "write" | "delete" | "update",
+    _permissionType: "read" | "write" | "delete" | "update",
   ): Promise<boolean> {
-    const [rows] = await pool.execute(
-      `SELECT 
-        COALESCE(up.can_${permissionType}, rp.can_${permissionType}, FALSE) as has_permission
-       FROM users u
-       LEFT JOIN user_permissions up ON u.id = up.user_id AND up.active = TRUE
-       LEFT JOIN modules m ON up.module_id = m.id AND m.active = TRUE
-       LEFT JOIN role_permissions rp ON u.role_id = rp.role_id AND rp.module_id = m.id AND rp.active = TRUE
-       WHERE u.id = ? AND m.name = ?`,
-      [userId, moduleName],
+    // Get user role
+    const [users] = await pool.execute(
+      `SELECT role_id FROM users WHERE id = ?`,
+      [userId],
     );
+    const userRows = users as { role_id: number | null }[];
+    const roleId = userRows[0]?.role_id ?? null;
 
-    const results = rows as { has_permission: boolean }[];
-    return results.length > 0 && results[0]?.has_permission === true;
+    return this.hasModuleAccess(userId, roleId, moduleName);
   }
 }
 

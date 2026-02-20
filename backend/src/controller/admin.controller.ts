@@ -315,8 +315,13 @@ export const getUsersByRole = asyncHandler(
  */
 export const createModule = asyncHandler(
   async (req: Request, res: Response) => {
-    const { name, description } = req.body;
-    const module = await adminService.createModule({ name, description });
+    const { name, description, parent_id } = req.body;
+    console.log("Controller received:", { name, description, parent_id });
+    const module = await adminService.createModule({
+      name,
+      description,
+      parent_id,
+    });
 
     res.status(201).json({
       success: true,
@@ -346,6 +351,23 @@ export const getAllModules = asyncHandler(
 );
 
 /**
+ * Get module tree (hierarchical structure)
+ */
+export const getModuleTree = asyncHandler(
+  async (_req: Request, res: Response) => {
+    const modules = await adminService.getModuleTree();
+
+    res.status(200).json({
+      success: true,
+      data: modules,
+      message: "Module tree fetched successfully",
+      statusCode: 200,
+      timestamp: new Date().toISOString(),
+    });
+  },
+);
+
+/**
  * Get module by ID
  */
 export const getModuleById = asyncHandler(
@@ -364,15 +386,34 @@ export const getModuleById = asyncHandler(
 );
 
 /**
+ * Get sub-modules by parent ID
+ */
+export const getSubModules = asyncHandler(
+  async (req: Request, res: Response) => {
+    const parentId = parseInt(getParam(req, "id"), 10);
+    const modules = await adminService.getSubModules(parentId);
+
+    res.status(200).json({
+      success: true,
+      data: modules,
+      message: "Sub-modules fetched successfully",
+      statusCode: 200,
+      timestamp: new Date().toISOString(),
+    });
+  },
+);
+
+/**
  * Update module
  */
 export const updateModule = asyncHandler(
   async (req: Request, res: Response) => {
     const moduleId = parseInt(getParam(req, "id"), 10);
-    const { name, description } = req.body;
+    const { name, description, parent_id } = req.body;
     const module = await adminService.updateModule(moduleId, {
       name,
       description,
+      parent_id,
     });
 
     res.status(200).json({
@@ -403,28 +444,23 @@ export const deleteModule = asyncHandler(
   },
 );
 
-// ==================== PERMISSION MANAGEMENT ====================
+// ==================== PERMISSION MANAGEMENT (Simplified) ====================
 
 /**
- * Set role permission
+ * Set role module access
  */
 export const setRolePermission = asyncHandler(
   async (req: Request, res: Response) => {
-    const { role_id, module_id, can_read, can_write, can_delete, can_update } =
-      req.body;
+    const { role_id, module_id } = req.body;
     await adminService.setRolePermission({
       role_id,
       module_id,
-      can_read,
-      can_write,
-      can_delete,
-      can_update,
     });
 
     res.status(200).json({
       success: true,
       data: null,
-      message: "Role permission set successfully",
+      message: "Role module access set successfully",
       statusCode: 200,
       timestamp: new Date().toISOString(),
     });
@@ -432,17 +468,17 @@ export const setRolePermission = asyncHandler(
 );
 
 /**
- * Get role permissions
+ * Get role modules
  */
 export const getRolePermissions = asyncHandler(
   async (req: Request, res: Response) => {
     const roleId = parseInt(getParam(req, "roleId"), 10);
-    const permissions = await adminService.getRolePermissions(roleId);
+    const modules = await adminService.getRolePermissions(roleId);
 
     res.status(200).json({
       success: true,
-      data: permissions,
-      message: "Role permissions fetched successfully",
+      data: modules,
+      message: "Role modules fetched successfully",
       statusCode: 200,
       timestamp: new Date().toISOString(),
     });
@@ -450,25 +486,20 @@ export const getRolePermissions = asyncHandler(
 );
 
 /**
- * Set user permission
+ * Set user module access
  */
 export const setUserPermission = asyncHandler(
   async (req: Request, res: Response) => {
-    const { user_id, module_id, can_read, can_write, can_delete, can_update } =
-      req.body;
+    const { user_id, module_id } = req.body;
     await adminService.setUserPermission({
       user_id,
       module_id,
-      can_read,
-      can_write,
-      can_delete,
-      can_update,
     });
 
     res.status(200).json({
       success: true,
       data: null,
-      message: "User permission set successfully",
+      message: "User module access set successfully",
       statusCode: 200,
       timestamp: new Date().toISOString(),
     });
@@ -476,17 +507,17 @@ export const setUserPermission = asyncHandler(
 );
 
 /**
- * Get user permissions
+ * Get user modules
  */
 export const getUserPermissions = asyncHandler(
   async (req: Request, res: Response) => {
     const userId = parseInt(getParam(req, "userId"), 10);
-    const permissions = await adminService.getUserPermissions(userId);
+    const result = await adminService.getUserPermissions(userId);
 
     res.status(200).json({
       success: true,
-      data: permissions,
-      message: "User permissions fetched successfully",
+      data: result,
+      message: "User modules fetched successfully",
       statusCode: 200,
       timestamp: new Date().toISOString(),
     });

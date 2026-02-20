@@ -9,9 +9,10 @@ import {
   type Module,
   type CreateRoleDTO,
   type CreateModuleDTO,
-  type CreateRolePermissionDTO,
-  type CreateUserPermissionDTO,
-  type UserPermissionsResponseDTO,
+  type CreateRoleModuleDTO,
+  type CreateUserModuleDTO,
+  type UserModulesResponseDTO,
+  type ModuleAccessDTO,
   type PermissionResponseDTO,
 } from "../types/index.js";
 import { NotFoundError, ConflictError } from "../error/index.js";
@@ -116,8 +117,8 @@ export class RBACService {
     await moduleRepository.delete(id);
   }
 
-  // Role Permission Management
-  async setRolePermission(data: CreateRolePermissionDTO): Promise<void> {
+  // Role Module Management (Simplified)
+  async setRoleModule(data: CreateRoleModuleDTO): Promise<void> {
     // Verify role exists
     const role = await roleRepository.findById(data.role_id);
     if (!role) {
@@ -130,39 +131,35 @@ export class RBACService {
       throw new NotFoundError("Module not found");
     }
 
-    await permissionRepository.createRolePermission(data);
+    await permissionRepository.addRoleModule(data);
   }
 
-  async getRolePermissions(roleId: number): Promise<PermissionResponseDTO[]> {
+  async getRoleModules(roleId: number): Promise<ModuleAccessDTO[]> {
     const role = await roleRepository.findById(roleId);
     if (!role) {
       throw new NotFoundError("Role not found");
     }
 
-    const permissions =
-      await permissionRepository.findRolePermissionsByRoleId(roleId);
-    const modules = await moduleRepository.findAll();
+    // Get all modules and mark which ones this role has access to
+    const allModules = await moduleRepository.findAll();
+    const roleModules = await permissionRepository.getRoleModules(roleId);
+    const roleModuleIds = new Set(roleModules.map((rm) => rm.module_id));
 
-    return modules.map((module) => {
-      const perm = permissions.find((p) => p.module_id === module.id);
-      return {
-        module_id: module.id,
-        module_name: module.name,
-        can_read: perm?.can_read ?? false,
-        can_write: perm?.can_write ?? false,
-        can_delete: perm?.can_delete ?? false,
-        can_update: perm?.can_update ?? false,
-        source: "role" as const,
-      };
-    });
+    return allModules.map((module) => ({
+      module_id: module.id,
+      module_name: module.name,
+      parent_id: module.parent_id,
+      has_access: roleModuleIds.has(module.id),
+      source: "role" as const,
+    }));
   }
 
-  async removeRolePermission(roleId: number, moduleId: number): Promise<void> {
-    await permissionRepository.deleteRolePermission(roleId, moduleId);
+  async removeRoleModule(roleId: number, moduleId: number): Promise<void> {
+    await permissionRepository.removeRoleModule(roleId, moduleId);
   }
 
-  // User Permission Management
-  async setUserPermission(data: CreateUserPermissionDTO): Promise<void> {
+  // User Module Management (Simplified)
+  async setUserModule(data: CreateUserModuleDTO): Promise<void> {
     // Verify user exists
     const user = await userRepository.findById(data.user_id);
     if (!user) {
@@ -175,12 +172,10 @@ export class RBACService {
       throw new NotFoundError("Module not found");
     }
 
-    await permissionRepository.createUserPermission(data);
+    await permissionRepository.addUserModule(data);
   }
 
-  async getUserPermissions(
-    userId: number,
-  ): Promise<UserPermissionsResponseDTO> {
+  async getUserModules(userId: number): Promise<UserModulesResponseDTO> {
     const user = await userRepository.findById(userId);
     if (!user) {
       throw new NotFoundError("User not found");
@@ -197,20 +192,19 @@ export class RBACService {
       }
     }
 
-    const permissions =
-      await permissionRepository.getUserPermissionsWithModuleNames(
-        userId,
-        user.role_id,
-      );
+    const modules = await permissionRepository.getUserModulesWithModuleNames(
+      userId,
+      user.role_id,
+    );
 
     return {
       role,
-      permissions,
+      modules,
     };
   }
 
-  async removeUserPermission(userId: number, moduleId: number): Promise<void> {
-    await permissionRepository.deleteUserPermission(userId, moduleId);
+  async removeUserModule(userId: number, moduleId: number): Promise<void> {
+    await permissionRepository.removeUserModule(userId, moduleId);
   }
 
   // Assign role to user
@@ -244,16 +238,21 @@ export class RBACService {
     ]);
   }
 
-  // Check permission
-  async checkPermission(
+  // Check module access (simplified)
+  async checkModuleAccess(
     userId: number,
     moduleName: string,
-    permissionType: "read" | "write" | "delete" | "update",
   ): Promise<boolean> {
-    return permissionRepository.hasPermission(
+    // Get user role
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      return false;
+    }
+
+    return permissionRepository.hasModuleAccess(
       userId,
+      user.role_id,
       moduleName,
-      permissionType,
     );
   }
 }

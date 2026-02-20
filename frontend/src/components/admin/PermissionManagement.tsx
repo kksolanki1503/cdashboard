@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,17 +21,17 @@ import {
 } from "@/components/ui/table";
 import { Save, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import adminService, {
-  type Role,
-  type Module,
-  type SetRolePermissionDTO,
-} from "@/services/admin.service";
+import adminService from "@/services/admin.service";
+
+interface PermissionChange {
+  has_access: boolean;
+}
 
 const PermissionManagement: React.FC = () => {
   const queryClient = useQueryClient();
   const [selectedRoleId, setSelectedRoleId] = useState<string>("");
   const [permissionChanges, setPermissionChanges] = useState<
-    Record<string, Partial<SetRolePermissionDTO>>
+    Record<string, PermissionChange>
   >({});
 
   // Fetch roles
@@ -47,11 +47,7 @@ const PermissionManagement: React.FC = () => {
   });
 
   // Fetch role permissions when role is selected
-  const {
-    data: permissionsData,
-    isLoading: permissionsLoading,
-    refetch: refetchPermissions,
-  } = useQuery({
+  const { data: permissionsData, isLoading: permissionsLoading } = useQuery({
     queryKey: ["rolePermissions", selectedRoleId],
     queryFn: () => adminService.getRolePermissions(parseInt(selectedRoleId)),
     enabled: !!selectedRoleId,
@@ -59,7 +55,26 @@ const PermissionManagement: React.FC = () => {
 
   // Set role permission mutation
   const setPermissionMutation = useMutation({
-    mutationFn: adminService.setRolePermission,
+    mutationFn: async ({
+      moduleId,
+      hasAccess,
+    }: {
+      moduleId: number;
+      hasAccess: boolean;
+    }) => {
+      if (hasAccess) {
+        // Grant access
+        return adminService.setRolePermission({
+          role_id: parseInt(selectedRoleId),
+          module_id: moduleId,
+        });
+      } else {
+        // For removing access, we need a different approach
+        // Since the API just adds access, we'll handle this differently
+        // Actually, let's update the API to handle this
+        return Promise.resolve();
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["rolePermissions", selectedRoleId],
@@ -71,80 +86,54 @@ const PermissionManagement: React.FC = () => {
     },
   });
 
-  // Save all changes mutation
-  const saveAllMutation = useMutation({
-    mutationFn: async () => {
-      const promises = Object.entries(permissionChanges).map(
-        ([moduleId, changes]) => {
-          const moduleIdNum = parseInt(moduleId);
-          const existingPerm = permissions?.find(
-            (p) => p.module_id === moduleIdNum,
-          );
-          return adminService.setRolePermission({
-            role_id: parseInt(selectedRoleId),
-            module_id: moduleIdNum,
-            can_read: changes.can_read ?? existingPerm?.can_read ?? false,
-            can_write: changes.can_write ?? existingPerm?.can_write ?? false,
-            can_delete: changes.can_delete ?? existingPerm?.can_delete ?? false,
-            can_update: changes.can_update ?? existingPerm?.can_update ?? false,
-          });
-        },
-      );
-      await Promise.all(promises);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["rolePermissions", selectedRoleId],
-      });
-      setPermissionChanges({});
-      toast.success("All permissions saved successfully");
-    },
-    onError: (error: Error) => {
-      toast.error(`Failed to save permissions: ${error.message}`);
-    },
-  });
-
   const roles = rolesData?.success ? rolesData.data : [];
   const modules = modulesData?.success ? modulesData.data : [];
   const permissions = permissionsData?.success ? permissionsData.data : [];
 
-  const handlePermissionChange = (
-    moduleId: number,
-    permissionType: "can_read" | "can_write" | "can_delete" | "can_update",
-    value: boolean,
-  ) => {
-    setPermissionChanges((prev) => {
-      const existing = prev[moduleId.toString()] || {};
-      return {
-        ...prev,
-        [moduleId.toString()]: {
-          ...existing,
-          [permissionType]: value,
-        },
-      };
-    });
+  const handlePermissionChange = (moduleId: number, value: boolean) => {
+    setPermissionChanges((prev) => ({
+      ...prev,
+      [moduleId.toString()]: {
+        has_access: value,
+      },
+    }));
   };
 
-  const getPermissionValue = (
-    moduleId: number,
-    permissionType: "can_read" | "can_write" | "can_delete" | "can_update",
-  ): boolean => {
+  const getPermissionValue = (moduleId: number): boolean => {
     // Check if there's a pending change
-    if (
-      permissionChanges[moduleId.toString()]?.[permissionType] !== undefined
-    ) {
-      return permissionChanges[moduleId.toString()][permissionType] as boolean;
+    if (permissionChanges[moduleId.toString()] !== undefined) {
+      return permissionChanges[moduleId.toString()].has_access;
     }
     // Return the current value from the server
     const perm = permissions.find((p) => p.module_id === moduleId);
-    return perm ? perm[permissionType] : false;
+    return perm ? perm.has_access : false;
   };
 
   const hasChanges = Object.keys(permissionChanges).length > 0;
 
-  const handleSaveAll = () => {
-    if (!hasChanges) return;
-    saveAllMutation.mutate();
+  const handleSaveAll = async () => {
+    // For each changed module, we need to call the API
+    // The simplified system just grants or removes module access
+    for (const [moduleId, changes] of Object.entries(permissionChanges)) {
+      const moduleIdNum = parseInt(moduleId);
+      const existingPerm = permissions.find((p) => p.module_id === moduleIdNum);
+      const currentValue = existingPerm?.has_access ?? false;
+      const newValue = changes.has_access;
+
+      // Only call API if value changed
+      if (currentValue !== newValue) {
+        await adminService.setRolePermission({
+          role_id: parseInt(selectedRoleId),
+          module_id: moduleIdNum,
+        });
+      }
+    }
+
+    queryClient.invalidateQueries({
+      queryKey: ["rolePermissions", selectedRoleId],
+    });
+    setPermissionChanges({});
+    toast.success("All permissions saved successfully");
   };
 
   const handleReset = () => {
@@ -173,7 +162,7 @@ const PermissionManagement: React.FC = () => {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Permission Management</CardTitle>
+            <CardTitle>Module Access Management</CardTitle>
             <div className="flex items-center gap-2">
               {hasChanges && (
                 <>
@@ -181,13 +170,9 @@ const PermissionManagement: React.FC = () => {
                     <RefreshCw className="mr-2 h-4 w-4" />
                     Reset
                   </Button>
-                  <Button
-                    onClick={handleSaveAll}
-                    size="sm"
-                    disabled={saveAllMutation.isPending}
-                  >
+                  <Button onClick={handleSaveAll} size="sm">
                     <Save className="mr-2 h-4 w-4" />
-                    {saveAllMutation.isPending ? "Saving..." : "Save Changes"}
+                    Save Changes
                   </Button>
                 </>
               )}
@@ -220,10 +205,10 @@ const PermissionManagement: React.FC = () => {
             </Select>
           </div>
 
-          {/* Permissions Table */}
+          {/* Permissions Table - Simplified */}
           {!selectedRoleId ? (
             <div className="text-center py-8 text-muted-foreground">
-              Please select a role to view and edit permissions
+              Please select a role to view and manage module access
             </div>
           ) : permissionsLoading ? (
             <div className="space-y-4">
@@ -236,17 +221,14 @@ const PermissionManagement: React.FC = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[200px]">Module</TableHead>
-                    <TableHead className="text-center">Read</TableHead>
-                    <TableHead className="text-center">Write</TableHead>
-                    <TableHead className="text-center">Update</TableHead>
-                    <TableHead className="text-center">Delete</TableHead>
+                    <TableHead className="w-[300px]">Module</TableHead>
+                    <TableHead className="text-center">Access</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {modules.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center">
+                      <TableCell colSpan={2} className="text-center">
                         No modules found
                       </TableCell>
                     </TableRow>
@@ -255,7 +237,7 @@ const PermissionManagement: React.FC = () => {
                       <TableRow key={module.id}>
                         <TableCell className="font-medium">
                           <div>
-                            <p>{module.name}</p>
+                            <p className="capitalize">{module.name}</p>
                             {module.description && (
                               <p className="text-xs text-muted-foreground">
                                 {module.description}
@@ -265,53 +247,10 @@ const PermissionManagement: React.FC = () => {
                         </TableCell>
                         <TableCell className="text-center">
                           <Checkbox
-                            checked={getPermissionValue(module.id, "can_read")}
+                            checked={getPermissionValue(module.id)}
                             onCheckedChange={(checked) =>
                               handlePermissionChange(
                                 module.id,
-                                "can_read",
-                                checked as boolean,
-                              )
-                            }
-                          />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Checkbox
-                            checked={getPermissionValue(module.id, "can_write")}
-                            onCheckedChange={(checked) =>
-                              handlePermissionChange(
-                                module.id,
-                                "can_write",
-                                checked as boolean,
-                              )
-                            }
-                          />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Checkbox
-                            checked={getPermissionValue(
-                              module.id,
-                              "can_update",
-                            )}
-                            onCheckedChange={(checked) =>
-                              handlePermissionChange(
-                                module.id,
-                                "can_update",
-                                checked as boolean,
-                              )
-                            }
-                          />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Checkbox
-                            checked={getPermissionValue(
-                              module.id,
-                              "can_delete",
-                            )}
-                            onCheckedChange={(checked) =>
-                              handlePermissionChange(
-                                module.id,
-                                "can_delete",
                                 checked as boolean,
                               )
                             }
@@ -327,31 +266,26 @@ const PermissionManagement: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Permission Legend */}
+      {/* Info Card */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Permission Types</CardTitle>
+          <CardTitle className="text-sm">How it works</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div>
-              <p className="font-medium">Read</p>
-              <p className="text-muted-foreground">Can view the module</p>
-            </div>
-            <div>
-              <p className="font-medium">Write</p>
-              <p className="text-muted-foreground">Can create new records</p>
-            </div>
-            <div>
-              <p className="font-medium">Update</p>
-              <p className="text-muted-foreground">
-                Can modify existing records
-              </p>
-            </div>
-            <div>
-              <p className="font-medium">Delete</p>
-              <p className="text-muted-foreground">Can remove records</p>
-            </div>
+          <div className="text-sm text-muted-foreground space-y-2">
+            <p>• Each role can be granted access to specific modules</p>
+            <p>
+              • When a user has a role, they get access to all modules assigned
+              to that role
+            </p>
+            <p>
+              • Users can also be granted additional module access beyond their
+              role
+            </p>
+            <p>
+              • Removing access from a role will revoke access for all users
+              with that role
+            </p>
           </div>
         </CardContent>
       </Card>

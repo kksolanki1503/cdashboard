@@ -14,6 +14,7 @@ import {
   getRolePermissions,
   setUserPermission,
   getUserPermissions,
+  removeUserPermission,
   assignRoleToUser,
   removeRoleFromUser,
 } from "../../controller/index.js";
@@ -46,6 +47,7 @@ router.get("/permissions/role/:roleId", getRolePermissions);
 // User permission routes
 router.post("/permissions/user", setUserPermission);
 router.get("/permissions/user/:userId", getUserPermissions);
+router.delete("/permissions/user/:userId/:moduleId", removeUserPermission);
 
 // User role assignment
 router.post("/users/:userId/role", assignRoleToUser);

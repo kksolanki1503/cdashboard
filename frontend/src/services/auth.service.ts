@@ -14,10 +14,7 @@ export interface SignUpData {
 export interface Module {
   module_id: number;
   module_name: string;
-  can_read: boolean;
-  can_write: boolean;
-  can_delete: boolean;
-  can_update: boolean;
+  parent_id: number | null;
 }
 
 export interface AuthResponse {

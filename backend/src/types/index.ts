@@ -13,11 +13,6 @@ export {
 } from "./auth.types.js";
 
 export {
-  type RefreshToken,
-  type CreateRefreshTokenDTO,
-} from "./refreshToken.types.js";
-
-export {
   type Role,
   type CreateRoleDTO,
   type UpdateRoleDTO,
@@ -29,6 +24,7 @@ export {
   type CreateModuleDTO,
   type UpdateModuleDTO,
   type ModuleResponseDTO,
+  type ModuleWithChildrenDTO,
 } from "./module.types.js";
 
 export {
@@ -44,4 +40,11 @@ export {
   type UpdateUserPermissionDTO,
   type PermissionResponseDTO,
   type UserPermissionsResponseDTO,
+  // New simplified types
+  type RoleModule,
+  type UserModule,
+  type CreateRoleModuleDTO,
+  type CreateUserModuleDTO,
+  type ModuleAccessDTO,
+  type UserModulesResponseDTO,
 } from "./permission.types.js";

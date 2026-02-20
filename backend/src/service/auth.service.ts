@@ -1,6 +1,5 @@
 import {
   userRepository,
-  refreshTokenRepository,
   roleRepository,
   permissionRepository,
 } from "../repository/index.js";
@@ -16,7 +15,7 @@ import {
   type RefreshTokenResponse,
   type LogoutResponse,
   type CreateUserDTO,
-  type ModulePermissionDTO,
+  type ModuleAccessDTO,
   toUserResponseDTO,
 } from "../types/index.js";
 import {
@@ -26,27 +25,27 @@ import {
 } from "../error/index.js";
 
 export class AuthService {
-  // Helper method to get user's accessible modules
+  // Helper method to get user's accessible modules (simplified)
   private async getUserModules(
     userId: number,
     roleId: number | null,
-  ): Promise<ModulePermissionDTO[]> {
-    const permissions =
-      await permissionRepository.getUserPermissionsWithModuleNames(
-        userId,
-        roleId,
-      );
+  ): Promise<
+    { module_id: number; module_name: string; parent_id: number | null }[]
+  > {
+    // Use the simplified permission system
+    const modules = await permissionRepository.getUserModulesWithModuleNames(
+      userId,
+      roleId,
+    );
 
-    // Filter to only return modules where user has at least read access
-    return permissions
-      .filter((p) => p.can_read)
-      .map((p) => ({
-        module_id: p.module_id,
-        module_name: p.module_name,
-        can_read: p.can_read,
-        can_write: p.can_write,
-        can_delete: p.can_delete,
-        can_update: p.can_update,
+    // Filter to only return modules where user has access
+    // and remove has_access and source fields
+    return modules
+      .filter((m) => m.has_access)
+      .map((m) => ({
+        module_id: m.module_id,
+        module_name: m.module_name,
+        parent_id: m.parent_id,
       }));
   }
 
@@ -77,7 +76,7 @@ export class AuthService {
 
     const user = await userRepository.create(userData);
 
-    // Generate tokens
+    // Generate tokens (stateless - no database storage)
     const accessToken = generateAccessToken({
       userId: user.id,
       email: user.email,
@@ -86,16 +85,6 @@ export class AuthService {
     const refreshToken = generateRefreshToken({
       userId: user.id,
       email: user.email,
-    });
-
-    // Store refresh token in database
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
-
-    await refreshTokenRepository.create({
-      user_id: user.id,
-      token: refreshToken,
-      expires_at: expiresAt,
     });
 
     // Get user's accessible modules
@@ -139,7 +128,7 @@ export class AuthService {
       throw new ForbiddenError("Account is pending approval");
     }
 
-    // Generate tokens
+    // Generate tokens (stateless - no database storage)
     const accessToken = generateAccessToken({
       userId: user.id,
       email: user.email,
@@ -148,16 +137,6 @@ export class AuthService {
     const refreshToken = generateRefreshToken({
       userId: user.id,
       email: user.email,
-    });
-
-    // Store refresh token in database
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
-
-    await refreshTokenRepository.create({
-      user_id: user.id,
-      token: refreshToken,
-      expires_at: expiresAt,
     });
 
     // Get user's accessible modules
@@ -178,35 +157,22 @@ export class AuthService {
   }
 
   async refreshToken(token: string): Promise<RefreshTokenResponse> {
-    // Verify the refresh token
+    // Verify the refresh token (stateless JWT verification)
+    // This checks both signature and expiration
     let decoded;
     try {
       decoded = verifyToken(token);
     } catch {
-      throw new UnauthorizedError("Invalid refresh token");
+      throw new UnauthorizedError("Invalid or expired refresh token");
     }
 
-    // Check if refresh token exists in database and is not revoked
-    const storedToken = await refreshTokenRepository.findByToken(token);
-    if (!storedToken || storedToken.revoked) {
-      throw new UnauthorizedError("Invalid or revoked refresh token");
-    }
-
-    // Check if refresh token is expired
-    if (new Date() > storedToken.expires_at) {
-      throw new UnauthorizedError("Refresh token has expired");
-    }
-
-    // Get user
+    // Get user from decoded token
     const user = await userRepository.findById(decoded.userId);
     if (!user || !user.active || !user.approved) {
       throw new UnauthorizedError("User not found or inactive");
     }
 
-    // Revoke old refresh token
-    await refreshTokenRepository.revoke(token);
-
-    // Generate new tokens
+    // Generate new tokens (stateless - no database storage)
     const newAccessToken = generateAccessToken({
       userId: user.id,
       email: user.email,
@@ -215,16 +181,6 @@ export class AuthService {
     const newRefreshToken = generateRefreshToken({
       userId: user.id,
       email: user.email,
-    });
-
-    // Store new refresh token
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
-
-    await refreshTokenRepository.create({
-      user_id: user.id,
-      token: newRefreshToken,
-      expires_at: expiresAt,
     });
 
     // Get user's accessible modules
@@ -244,10 +200,9 @@ export class AuthService {
     };
   }
 
-  async logout(token: string): Promise<LogoutResponse> {
-    // Revoke the refresh token
-    await refreshTokenRepository.revoke(token);
-
+  async logout(_token: string): Promise<LogoutResponse> {
+    // Stateless logout - just return success
+    // The cookie will be cleared by the controller
     return {
       message: "Logged out successfully",
     };

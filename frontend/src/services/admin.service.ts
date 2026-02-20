@@ -29,18 +29,20 @@ export interface Module {
   id: number;
   name: string;
   description: string | null;
+  parent_id: number | null;
+  active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface ModuleWithChildren extends Module {
+  children: ModuleWithChildren[];
 }
 
 export interface Permission {
   module_id: number;
   module_name: string;
-  can_read: boolean;
-  can_write: boolean;
-  can_delete: boolean;
-  can_update: boolean;
-  active: boolean;
+  has_access: boolean;
   source: "role" | "user" | "combined";
 }
 
@@ -92,29 +94,23 @@ export interface UpdateRoleDTO {
 export interface CreateModuleDTO {
   name: string;
   description?: string;
+  parent_id?: number | null;
 }
 
 export interface UpdateModuleDTO {
   name?: string;
   description?: string;
+  parent_id?: number | null;
 }
 
 export interface SetRolePermissionDTO {
   role_id: number;
   module_id: number;
-  can_read?: boolean;
-  can_write?: boolean;
-  can_delete?: boolean;
-  can_update?: boolean;
 }
 
 export interface SetUserPermissionDTO {
   user_id: number;
   module_id: number;
-  can_read?: boolean;
-  can_write?: boolean;
-  can_delete?: boolean;
-  can_update?: boolean;
 }
 
 export interface ApiResponse<T> {
@@ -275,9 +271,23 @@ const adminService = {
     return response.data;
   },
 
+  getModuleTree: async (): Promise<ApiResponse<ModuleWithChildren[]>> => {
+    const response = await api.get<ApiResponse<ModuleWithChildren[]>>(
+      "/api/v1/admin/modules/tree",
+    );
+    return response.data;
+  },
+
   getModuleById: async (id: number): Promise<ApiResponse<Module>> => {
     const response = await api.get<ApiResponse<Module>>(
       `/api/v1/admin/modules/${id}`,
+    );
+    return response.data;
+  },
+
+  getSubModules: async (parentId: number): Promise<ApiResponse<Module[]>> => {
+    const response = await api.get<ApiResponse<Module[]>>(
+      `/api/v1/admin/modules/${parentId}/submodules`,
     );
     return response.data;
   },
@@ -358,6 +368,16 @@ const adminService = {
     const response = await api.post<ApiResponse<null>>(
       "/api/v1/admin/permissions/user",
       data,
+    );
+    return response.data;
+  },
+
+  removeUserPermission: async (
+    userId: number,
+    moduleId: number,
+  ): Promise<ApiResponse<null>> => {
+    const response = await api.delete<ApiResponse<null>>(
+      `/api/v1/admin/permissions/user/${userId}/${moduleId}`,
     );
     return response.data;
   },

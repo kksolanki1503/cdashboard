@@ -11,11 +11,13 @@ import {
   type CreateRoleDTO,
   type CreateModuleDTO,
   type CreateUserDTO,
-  type CreateRolePermissionDTO,
-  type CreateUserPermissionDTO,
-  type UserPermissionsResponseDTO,
-  type PermissionResponseDTO,
+  // Simplified permission types
+  type CreateRoleModuleDTO,
+  type CreateUserModuleDTO,
+  type UserModulesResponseDTO,
+  type ModuleAccessDTO,
   type UserResponseDTO,
+  type ModuleWithChildrenDTO,
   toUserResponseDTO,
 } from "../types/index.js";
 import { NotFoundError, ConflictError } from "../error/index.js";
@@ -338,10 +340,27 @@ export class AdminService {
   // ==================== MODULE MANAGEMENT ====================
 
   async createModule(data: CreateModuleDTO): Promise<Module> {
+    // Check for duplicate name - findByName returns first match
     const existingModule = await moduleRepository.findByName(data.name);
     if (existingModule) {
-      throw new ConflictError("Module with this name already exists");
+      // If found by name, check if it's under the same parent
+      // Treat both null parent_id as same (root level)
+      const dataParentId = data.parent_id ?? null;
+      if (dataParentId === existingModule.parent_id) {
+        throw new ConflictError(
+          "Module with this name already exists under this parent",
+        );
+      }
     }
+
+    // Validate parent_id if provided
+    if (data.parent_id) {
+      const parentModule = await moduleRepository.findById(data.parent_id);
+      if (!parentModule) {
+        throw new NotFoundError("Parent module not found");
+      }
+    }
+
     return moduleRepository.create(data);
   }
 
@@ -355,6 +374,18 @@ export class AdminService {
 
   async getAllModules(): Promise<Module[]> {
     return moduleRepository.findAll();
+  }
+
+  async getModuleTree(): Promise<ModuleWithChildrenDTO[]> {
+    return moduleRepository.getModuleTree();
+  }
+
+  async getRootModules(): Promise<Module[]> {
+    return moduleRepository.findRootModules();
+  }
+
+  async getSubModules(parentId: number): Promise<Module[]> {
+    return moduleRepository.findSubModules(parentId);
   }
 
   async updateModule(
@@ -373,6 +404,34 @@ export class AdminService {
       }
     }
 
+    // Validate parent_id if provided
+    if (data.parent_id !== undefined && data.parent_id !== null) {
+      // Cannot set parent_id to self
+      if (data.parent_id === id) {
+        throw new ConflictError("Module cannot be its own parent");
+      }
+
+      const parentModule = await moduleRepository.findById(data.parent_id);
+      if (!parentModule) {
+        throw new NotFoundError("Parent module not found");
+      }
+
+      // Check for circular reference
+      let currentParent = parentModule;
+      while (currentParent.parent_id) {
+        if (currentParent.parent_id === id) {
+          throw new ConflictError(
+            "Circular reference detected in module hierarchy",
+          );
+        }
+        const nextParent = await moduleRepository.findById(
+          currentParent.parent_id,
+        );
+        if (!nextParent) break;
+        currentParent = nextParent;
+      }
+    }
+
     const updatedModule = await moduleRepository.update(id, data);
     return updatedModule as Module;
   }
@@ -381,6 +440,14 @@ export class AdminService {
     const module = await moduleRepository.findById(id);
     if (!module) {
       throw new NotFoundError("Module not found");
+    }
+
+    // Check if module has sub-modules
+    const subModules = await moduleRepository.findSubModules(id);
+    if (subModules.length > 0) {
+      throw new ConflictError(
+        "Cannot delete module with sub-modules. Delete or reassign sub-modules first.",
+      );
     }
 
     // Delete all permissions for this module
@@ -394,9 +461,9 @@ export class AdminService {
     await moduleRepository.delete(id);
   }
 
-  // ==================== PERMISSION MANAGEMENT ====================
+  // ==================== PERMISSION MANAGEMENT (Simplified) ====================
 
-  async setRolePermission(data: CreateRolePermissionDTO): Promise<void> {
+  async setRolePermission(data: CreateRoleModuleDTO): Promise<void> {
     // Verify role exists
     const role = await roleRepository.findById(data.role_id);
     if (!role) {
@@ -409,35 +476,30 @@ export class AdminService {
       throw new NotFoundError("Module not found");
     }
 
-    await permissionRepository.createRolePermission(data);
+    await permissionRepository.addRoleModule(data);
   }
 
-  async getRolePermissions(roleId: number): Promise<PermissionResponseDTO[]> {
+  async getRolePermissions(roleId: number): Promise<ModuleAccessDTO[]> {
     const role = await roleRepository.findById(roleId);
     if (!role) {
       throw new NotFoundError("Role not found");
     }
 
-    const permissions =
-      await permissionRepository.findRolePermissionsByRoleId(roleId);
-    const modules = await moduleRepository.findAll();
+    // Get all modules and mark which ones this role has access to
+    const allModules = await moduleRepository.findAll();
+    const roleModules = await permissionRepository.getRoleModules(roleId);
+    const roleModuleIds = new Set(roleModules.map((rm) => rm.module_id));
 
-    return modules.map((module) => {
-      const perm = permissions.find((p) => p.module_id === module.id);
-      return {
-        module_id: module.id,
-        module_name: module.name,
-        can_read: perm?.can_read ?? false,
-        can_write: perm?.can_write ?? false,
-        can_delete: perm?.can_delete ?? false,
-        can_update: perm?.can_update ?? false,
-        active: perm?.active ?? true,
-        source: "role" as const,
-      };
-    });
+    return allModules.map((module) => ({
+      module_id: module.id,
+      module_name: module.name,
+      parent_id: module.parent_id,
+      has_access: roleModuleIds.has(module.id),
+      source: "role" as const,
+    }));
   }
 
-  async setUserPermission(data: CreateUserPermissionDTO): Promise<void> {
+  async setUserPermission(data: CreateUserModuleDTO): Promise<void> {
     // Verify user exists
     const user = await userRepository.findById(data.user_id);
     if (!user) {
@@ -450,12 +512,10 @@ export class AdminService {
       throw new NotFoundError("Module not found");
     }
 
-    await permissionRepository.createUserPermission(data);
+    await permissionRepository.addUserModule(data);
   }
 
-  async getUserPermissions(
-    userId: number,
-  ): Promise<UserPermissionsResponseDTO> {
+  async getUserPermissions(userId: number): Promise<UserModulesResponseDTO> {
     const user = await userRepository.findById(userId);
     if (!user) {
       throw new NotFoundError("User not found");
@@ -472,15 +532,14 @@ export class AdminService {
       }
     }
 
-    const permissions =
-      await permissionRepository.getUserPermissionsWithModuleNames(
-        userId,
-        user.role_id,
-      );
+    const modules = await permissionRepository.getUserModulesWithModuleNames(
+      userId,
+      user.role_id,
+    );
 
     return {
       role,
-      permissions,
+      modules,
     };
   }
 

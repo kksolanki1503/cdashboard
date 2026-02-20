@@ -25,6 +25,8 @@ import {
   getModuleById,
   updateModule,
   deleteModule,
+  getModuleTree,
+  getSubModules,
   // Permission Management
   setRolePermission,
   getRolePermissions,
@@ -72,7 +74,9 @@ router.get("/roles/:id/users", getUsersByRole);
 
 // ==================== MODULE MANAGEMENT ====================
 router.get("/modules", getAllModules);
+router.get("/modules/tree", getModuleTree);
 router.get("/modules/:id", getModuleById);
+router.get("/modules/:id/submodules", getSubModules);
 router.post("/modules", createModule);
 router.put("/modules/:id", updateModule);
 router.delete("/modules/:id", deleteModule);

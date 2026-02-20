@@ -3,10 +3,6 @@ export {
   default as userRepository,
 } from "./user.repository.js";
 export {
-  RefreshTokenRepository,
-  default as refreshTokenRepository,
-} from "./refreshToken.repository.js";
-export {
   RoleRepository,
   default as roleRepository,
 } from "./role.repository.js";

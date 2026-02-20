@@ -21,6 +21,7 @@ export {
   getRolePermissions,
   setUserPermission,
   getUserPermissions,
+  removeUserPermission,
   assignRoleToUser,
   removeRoleFromUser,
 } from "./rbac.controller.js";
@@ -40,6 +41,9 @@ export {
   getPendingUsers,
   // Role Management
   getUsersByRole,
+  // Module Management
+  getModuleTree,
+  getSubModules,
   // Permission Management
   getPermissionsMatrix,
   // Dashboard Stats

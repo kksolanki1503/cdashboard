@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { pool } from "../config/index.js";
-import { permissionRepository } from "../repository/index.js";
+import { permissionRepository, userRepository } from "../repository/index.js";
 import { ForbiddenError, UnauthorizedError } from "../error/index.js";
 import { AuthRequest } from "./authMiddleware.js";
 
@@ -8,7 +8,7 @@ type PermissionType = "read" | "write" | "delete" | "update";
 
 export const requirePermission = (
   moduleName: string,
-  permissionType: PermissionType,
+  _permissionType: PermissionType,
 ) => {
   return async (
     req: Request,
@@ -23,18 +23,23 @@ export const requirePermission = (
       return;
     }
 
-    const hasPermission = await permissionRepository.hasPermission(
+    // Get user with role
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      next(new UnauthorizedError("User not found"));
+      return;
+    }
+
+    // Simplified permission check - just check if user has access to the module
+    // (either through their role or through extra user permissions)
+    const hasAccess = await permissionRepository.hasModuleAccess(
       userId,
+      user.role_id,
       moduleName,
-      permissionType,
     );
 
-    if (!hasPermission) {
-      next(
-        new ForbiddenError(
-          `You don't have ${permissionType} permission for ${moduleName}`,
-        ),
-      );
+    if (!hasAccess) {
+      next(new ForbiddenError(`You don't have access to ${moduleName}`));
       return;
     }
 

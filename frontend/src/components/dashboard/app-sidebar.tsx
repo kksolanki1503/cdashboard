@@ -62,25 +62,42 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const modules = useAppSelector((state) => state.auth.modules);
   const user = useAppSelector((state) => state.auth.user);
 
-  // Convert modules to navigation items
+  // Convert modules to navigation items with grouping by parent_id
   const navItems: NavItem[] = React.useMemo(() => {
-    const items: NavItem[] = modules
-      .filter((module) => module.can_read)
-      .map((module) => {
-        const moduleName = module.module_name.toLowerCase();
-        const icon = moduleIconMap[moduleName] || HomeIcon;
+    // Separate root modules (parent_id === null) and child modules
+    const rootModules = modules.filter((m) => m.parent_id === null);
+    const childModules = modules.filter((m) => m.parent_id !== null);
 
-        return {
-          title: module.module_name,
-          url: `/${moduleName}`,
-          icon,
-          isActive: moduleName === "dashboard",
-        };
-      });
+    const items: NavItem[] = rootModules.map((module) => {
+      const moduleName = module.module_name.toLowerCase();
+      const icon = moduleIconMap[moduleName] || HomeIcon;
+
+      // Find child modules
+      const children = childModules
+        .filter((child) => child.parent_id === module.module_id)
+        .map((child) => {
+          const childName = child.module_name.toLowerCase();
+          const childIcon = moduleIconMap[childName] || HomeIcon;
+          return {
+            title: child.module_name,
+            url: `/${childName}`,
+            icon: childIcon,
+            isActive: false,
+          };
+        });
+
+      return {
+        title: module.module_name,
+        url: `/${moduleName}`,
+        icon,
+        isActive: moduleName === "dashboard",
+        ...(children.length > 0 && { items: children }),
+      };
+    });
 
     // Add Admin panel for users with admin role or admin module access
     const hasAdminAccess = modules.some(
-      (m) => m.module_name.toLowerCase() === "admin" && m.can_read,
+      (m) => m.module_name.toLowerCase() === "admin",
     );
 
     // Check if user has admin role (you may need to adjust this based on your role structure)
