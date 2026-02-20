@@ -42,7 +42,7 @@ const data = {
     {
       name: "Acme Inc",
       logo: Logo,
-      url: "#",
+      url: "/",
     },
   ],
 };
@@ -88,7 +88,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
       return {
         title: module.module_name,
-        url: `/${moduleName}`,
+        url: moduleName === "dashboard" ? "/" : `/${moduleName}`,
         icon,
         isActive: moduleName === "dashboard",
         ...(children.length > 0 && { items: children }),

@@ -7,6 +7,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { Link } from "react-router";
 
 export function TeamSwitcher({
   teams,
@@ -27,13 +28,13 @@ export function TeamSwitcher({
     <SidebarMenu>
       <SidebarMenuItem>
         <SidebarMenuButton size="lg" asChild>
-          <a href={activeTeam.url} className="w-full">
+          <Link to={activeTeam.url} className="w-full">
             <img
               src={activeTeam.logo}
               alt={activeTeam.name}
               className="w-[80%] h-auto object-contain"
             />
-          </a>
+          </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>

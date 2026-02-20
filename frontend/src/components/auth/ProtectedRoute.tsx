@@ -8,10 +8,29 @@ interface ProtectedRouteProps {
   children: ReactNode;
 }
 
+/**
+ * Check if user has access to a specific module
+ */
+const hasModuleAccess = (
+  modules: { module_name: string }[],
+  pathname: string,
+): boolean => {
+  // Get the module name from the pathname
+  const pathModule = pathname.replace("/", "").toLowerCase();
+
+  // If it's the root path (dashboard), allow access
+  if (!pathModule) {
+    return true;
+  }
+
+  // Check if user has access to this module
+  return modules.some((m) => m.module_name.toLowerCase() === pathModule);
+};
+
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const location = useLocation();
   const dispatch = useAppDispatch();
-  const { isAuthenticated, isLoading, isInitialized, accessToken } =
+  const { isAuthenticated, isLoading, isInitialized, accessToken, modules } =
     useAppSelector((state) => state.auth);
 
   // Try to refresh token on mount if not initialized
@@ -39,6 +58,12 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     return (
       <Navigate to="/signin" state={{ from: location.pathname }} replace />
     );
+  }
+
+  // Check if user has access to the module they're trying to access
+  if (!hasModuleAccess(modules, location.pathname)) {
+    // Redirect to dashboard if no access to the requested module
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
