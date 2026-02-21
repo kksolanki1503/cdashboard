@@ -350,13 +350,13 @@ const adminService = {
   ): Promise<
     ApiResponse<{
       role: { id: number; name: string } | null;
-      permissions: Permission[];
+      modules: Permission[];
     }>
   > => {
     const response = await api.get<
       ApiResponse<{
         role: { id: number; name: string } | null;
-        permissions: Permission[];
+        modules: Permission[];
       }>
     >(`/api/v1/admin/permissions/user/${userId}`);
     return response.data;

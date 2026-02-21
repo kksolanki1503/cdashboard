@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -25,9 +25,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Save, UserPlus, UserMinus } from "lucide-react";
+import { Save, Check, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import adminService, { type User, type Module } from "@/services/admin.service";
+import adminService, {
+  type User,
+  type Module,
+  type Permission,
+} from "@/services/admin.service";
 
 interface UserModuleAccess {
   module_id: number;
@@ -44,9 +48,10 @@ interface UserPermissions {
 const UserPermissionManagement: React.FC = () => {
   const queryClient = useQueryClient();
   const [selectedUserId, setSelectedUserId] = useState<string>("");
-  const [extraModuleChanges, setExtraModuleChanges] = useState<
+  const [permissionChanges, setPermissionChanges] = useState<
     Record<number, boolean>
   >({});
+  const [initialLoaded, setInitialLoaded] = useState(false);
 
   // Fetch users
   const { data: usersData, isLoading: usersLoading } = useQuery({
@@ -69,100 +74,135 @@ const UserPermissionManagement: React.FC = () => {
     },
   );
 
-  // Set user module permission mutation
-  const setUserModuleMutation = useMutation({
-    mutationFn: async ({
-      moduleId,
-      grant,
-    }: {
-      moduleId: number;
-      grant: boolean;
-    }) => {
-      if (grant) {
-        return adminService.setUserPermission({
-          user_id: parseInt(selectedUserId),
-          module_id: moduleId,
-        });
-      }
-      // For removing, we need a different approach - the API doesn't have delete yet
-      return Promise.resolve();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["userPermissions", selectedUserId],
+  // Reset state when user changes
+  useEffect(() => {
+    if (selectedUserId) {
+      setInitialLoaded(false);
+      setPermissionChanges({});
+    }
+  }, [selectedUserId]);
+
+  // Initialize permissionChanges when permissions data is loaded
+  useEffect(() => {
+    if (
+      userPermissionsData?.success &&
+      userPermissionsData.data &&
+      !initialLoaded
+    ) {
+      // API returns 'modules' not 'permissions'
+      const permissions = userPermissionsData.data.modules || [];
+      const initialChanges: Record<number, boolean> = {};
+
+      permissions.forEach((perm: Permission) => {
+        if (perm.has_access) {
+          initialChanges[perm.module_id] = true;
+        }
       });
-      toast.success("User permission updated successfully");
-    },
-    onError: (error: Error) => {
-      toast.error(`Failed to update permission: ${error.message}`);
-    },
-  });
+
+      setPermissionChanges(initialChanges);
+      setInitialLoaded(true);
+    }
+  }, [userPermissionsData, initialLoaded]);
 
   const users = usersData?.success ? usersData.data : [];
   const modules = modulesData?.success ? modulesData.data : [];
-  // @ts-ignore - API returns permissions but our type uses modules
+
+  // API returns { role, modules } but we use permissions in the component
   const userPermissionsDataVal = userPermissionsData?.success
     ? userPermissionsData.data
-    : { role: null, permissions: [] };
+    : { role: null, modules: [] as Permission[] };
 
-  // Map permissions to modules for compatibility
+  // Map permissions to modules for compatibility - API returns 'modules' not 'permissions'
   const userPermissions: UserPermissions = {
     role: userPermissionsDataVal.role,
-    modules: userPermissionsDataVal.permissions || [],
+    modules: (userPermissionsDataVal.modules || []).map((m: any) => ({
+      module_id: m.module_id,
+      module_name: m.module_name,
+      has_access: m.has_access,
+      source: m.source,
+    })),
   };
 
-  // Get modules that the user's role gives them access to
-  const roleModuleIds = new Set(
-    userPermissions.modules
-      .filter((m) => m.source === "role" || m.source === "combined")
-      .map((m) => m.module_id),
+  // Create a map of all permissions (role + direct)
+  const allPermissionIds = new Set(
+    userPermissions.modules.filter((m) => m.has_access).map((m) => m.module_id),
   );
 
-  // Get extra modules (directly granted to user)
-  const extraModuleIds = new Set(
-    userPermissions.modules
-      .filter((m) => m.source === "user" || m.source === "combined")
-      .map((m) => m.module_id),
-  );
+  // Get the source for each module
+  const getModuleSource = (
+    moduleId: number,
+  ): "role" | "user" | "combined" | null => {
+    const perm = userPermissions.modules.find((m) => m.module_id === moduleId);
+    return perm ? perm.source : null;
+  };
 
-  const handleExtraModuleChange = (moduleId: number, grant: boolean) => {
-    setExtraModuleChanges((prev) => ({
+  const handlePermissionChange = (moduleId: number, checked: boolean) => {
+    setPermissionChanges((prev) => ({
       ...prev,
-      [moduleId]: grant,
+      [moduleId]: checked,
     }));
   };
 
-  const getExtraModuleValue = (moduleId: number): boolean => {
-    if (extraModuleChanges[moduleId] !== undefined) {
-      return extraModuleChanges[moduleId];
+  const getPermissionValue = (moduleId: number): boolean => {
+    if (permissionChanges[moduleId] !== undefined) {
+      return permissionChanges[moduleId];
     }
-    return extraModuleIds.has(moduleId);
+    return allPermissionIds.has(moduleId);
   };
 
-  const hasChanges = Object.keys(extraModuleChanges).length > 0;
+  const hasChanges = (): boolean => {
+    // Check if any permission was removed
+    for (const moduleId of allPermissionIds) {
+      const currentValue = getPermissionValue(moduleId);
+      if (!currentValue) return true;
+    }
+    // Check if any new permission was added
+    for (const [moduleIdStr, newValue] of Object.entries(permissionChanges)) {
+      const moduleId = parseInt(moduleIdStr);
+      if (!allPermissionIds.has(moduleId) && newValue) return true;
+    }
+    return Object.keys(permissionChanges).length > 0;
+  };
 
   const handleSaveAll = async () => {
-    for (const [moduleIdStr, grant] of Object.entries(extraModuleChanges)) {
-      const moduleId = parseInt(moduleIdStr);
-      const currentValue = extraModuleIds.has(moduleId);
+    // Get all modules
+    for (const module of modules) {
+      const currentHasAccess = allPermissionIds.has(module.id);
+      const newValue = getPermissionValue(module.id);
 
-      if (currentValue !== grant) {
-        await adminService.setUserPermission({
-          user_id: parseInt(selectedUserId),
-          module_id: moduleId,
-        });
+      if (currentHasAccess !== newValue) {
+        if (newValue) {
+          // Grant permission
+          await adminService.setUserPermission({
+            user_id: parseInt(selectedUserId),
+            module_id: module.id,
+          });
+        } else {
+          // Remove permission
+          await adminService.removeUserPermission(
+            parseInt(selectedUserId),
+            module.id,
+          );
+        }
       }
     }
 
     queryClient.invalidateQueries({
       queryKey: ["userPermissions", selectedUserId],
     });
-    setExtraModuleChanges({});
+    setPermissionChanges({});
     toast.success("User permissions saved successfully");
   };
 
   const handleReset = () => {
-    setExtraModuleChanges({});
+    // Reset to original permissions
+    const initialChanges: Record<number, boolean> = {};
+    userPermissions.modules
+      .filter((m) => m.has_access)
+      .forEach((m) => {
+        initialChanges[m.module_id] = true;
+      });
+    setPermissionChanges(initialChanges);
   };
 
   if (usersLoading || modulesLoading) {
@@ -187,9 +227,10 @@ const UserPermissionManagement: React.FC = () => {
       {/* User Selection */}
       <Card>
         <CardHeader>
-          <CardTitle>Manage User Module Permissions</CardTitle>
+          <CardTitle>Manage User Permissions</CardTitle>
           <CardDescription>
-            Grant or revoke additional module access for users beyond their role
+            Select a user to view and edit their module permissions (including
+            role-based access)
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -201,7 +242,8 @@ const UserPermissionManagement: React.FC = () => {
               value={selectedUserId}
               onValueChange={(value: string) => {
                 setSelectedUserId(value);
-                setExtraModuleChanges({});
+                setPermissionChanges({});
+                setInitialLoaded(false);
               }}
             >
               <SelectTrigger className="w-[300px]">
@@ -234,35 +276,22 @@ const UserPermissionManagement: React.FC = () => {
               their role
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {modules
-                .filter((m) => roleModuleIds.has(m.id))
-                .map((module) => (
-                  <span
-                    key={module.id}
-                    className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
-                  >
-                    {module.name}
-                  </span>
-                ))}
-            </div>
-          </CardContent>
         </Card>
       )}
 
-      {/* Extra Module Permissions */}
+      {/* Module Permissions - All checked by default */}
       {selectedUserId && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Additional Module Access</CardTitle>
+                <CardTitle>Module Permissions</CardTitle>
                 <CardDescription>
-                  Grant extra modules to this user beyond their role
+                  All permissions the user has (from role and direct assignment)
+                  are checked
                 </CardDescription>
               </div>
-              {hasChanges && (
+              {hasChanges() && (
                 <div className="flex items-center gap-2">
                   <Button variant="outline" onClick={handleReset} size="sm">
                     Reset
@@ -278,7 +307,7 @@ const UserPermissionManagement: React.FC = () => {
           <CardContent>
             {!selectedUserId ? (
               <div className="text-center py-8 text-muted-foreground">
-                Please select a user to manage their extra module permissions
+                Please select a user to manage their module permissions
               </div>
             ) : permissionsLoading ? (
               <div className="space-y-4">
@@ -292,9 +321,9 @@ const UserPermissionManagement: React.FC = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[300px]">Module</TableHead>
-                      <TableHead className="text-center">Role Access</TableHead>
-                      <TableHead className="text-center">
-                        Extra Access
+                      <TableHead className="text-center">Access</TableHead>
+                      <TableHead className="text-center w-[100px]">
+                        Granted
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -307,8 +336,8 @@ const UserPermissionManagement: React.FC = () => {
                       </TableRow>
                     ) : (
                       modules.map((module) => {
-                        const hasRoleAccess = roleModuleIds.has(module.id);
-                        const hasExtraAccess = getExtraModuleValue(module.id);
+                        const hasAccess = getPermissionValue(module.id);
+                        const source = getModuleSource(module.id);
 
                         return (
                           <TableRow key={module.id}>
@@ -323,9 +352,10 @@ const UserPermissionManagement: React.FC = () => {
                               </div>
                             </TableCell>
                             <TableCell className="text-center">
-                              {hasRoleAccess ? (
-                                <span className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
-                                  Via Role
+                              {hasAccess ? (
+                                <span className="inline-flex items-center px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
+                                  <Check className="mr-1 h-3 w-3" />
+                                  Has Access
                                 </span>
                               ) : (
                                 <span className="text-muted-foreground text-xs">
@@ -334,21 +364,15 @@ const UserPermissionManagement: React.FC = () => {
                               )}
                             </TableCell>
                             <TableCell className="text-center">
-                              {hasRoleAccess ? (
-                                <span className="text-muted-foreground text-xs">
-                                  (Already has access)
-                                </span>
-                              ) : (
-                                <Checkbox
-                                  checked={hasExtraAccess}
-                                  onCheckedChange={(checked) =>
-                                    handleExtraModuleChange(
-                                      module.id,
-                                      checked as boolean,
-                                    )
-                                  }
-                                />
-                              )}
+                              <Checkbox
+                                checked={hasAccess}
+                                onCheckedChange={(checked) =>
+                                  handlePermissionChange(
+                                    module.id,
+                                    checked as boolean,
+                                  )
+                                }
+                              />
                             </TableCell>
                           </TableRow>
                         );
@@ -389,9 +413,8 @@ const UserPermissionManagement: React.FC = () => {
                       className="px-2 py-1 bg-green-200 text-green-800 rounded text-xs"
                     >
                       {m.module_name}
-                      {m.source !== "role" &&
-                        m.source !== "combined" &&
-                        " (extra)"}
+                      {m.source === "user" && " (direct)"}
+                      {m.source === "role" && " (role)"}
                     </span>
                   ))}
               </div>
