@@ -13,7 +13,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { NavMain } from "@/components/dashboard/nav-main";
 
-import { TeamSwitcher } from "@/components/dashboard/team-switcher";
+import { OrgSwitcher } from "@/components/dashboard/org-switcher";
 import Logo from "@/assets/images/alpha-targeting-logo.png";
 
 import {
@@ -119,7 +119,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+        <OrgSwitcher teams={data.teams} />
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navItems} />
