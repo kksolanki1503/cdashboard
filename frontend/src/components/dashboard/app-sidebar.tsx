@@ -78,7 +78,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         .map((child) => {
           const childName = child.module_name.toLowerCase();
           const childIcon = moduleIconMap[childName] || HomeIcon;
-          const childUrl = `/${childName}`;
+          // Child URL should be parent_route/child_route
+          const childUrl = `/${moduleName}/${childName}`;
           return {
             title: child.module_name,
             url: childUrl,

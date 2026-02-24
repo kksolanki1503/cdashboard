@@ -3,23 +3,12 @@ import { store } from "@/store";
 import { refreshAccessToken, clearAuth } from "@/store/authSlice";
 
 // Environment-based base URL configuration
-const getBaseURL = () => {
-  const mode = import.meta.env.MODE;
 
-  switch (mode) {
-    case "production":
-      return import.meta.env.VITE_API_URL || "https://api.production.com";
-    case "staging":
-      return import.meta.env.VITE_API_URL || "https://api.staging.com";
-    case "development":
-    default:
-      return import.meta.env.VITE_API_URL || "http://localhost:3000";
-  }
-};
+const BaseURL = import.meta.env.VITE_API_URL;
 
 // Create axios instance
 const api = axios.create({
-  baseURL: getBaseURL(),
+  baseURL: BaseURL,
   headers: {
     "Content-Type": "application/json",
   },
