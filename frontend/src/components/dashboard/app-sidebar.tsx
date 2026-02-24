@@ -2,12 +2,12 @@
 
 import * as React from "react";
 import {
-  BookOpen,
-  Bot,
-  Settings2,
-  SquareTerminal,
   HomeIcon,
   Shield,
+  BarChart3,
+  Megaphone,
+  Link2,
+  Upload,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -29,10 +29,10 @@ import { useAppSelector } from "@/store/hooks";
 // Icon mapping for modules
 const moduleIconMap: Record<string, LucideIcon> = {
   dashboard: HomeIcon,
-  playground: SquareTerminal,
-  models: Bot,
-  documentation: BookOpen,
-  settings: Settings2,
+  reports: BarChart3,
+  campaign: Megaphone,
+  "campaign-links": Link2,
+  "campaign-upload-csv": Upload,
   admin: Shield,
 };
 
